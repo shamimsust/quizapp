@@ -247,7 +247,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           _buildLabel('QUESTION SETTINGS'),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _type,
+            initialValue: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() { _type = v!; _correctOptions.clear(); }),
             items: const [

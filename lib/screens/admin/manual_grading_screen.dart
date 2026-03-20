@@ -140,7 +140,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                       final String studentResponse = studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A");
 
                       return _buildAnswerCard(originalStem, studentResponse, studentData['type'] ?? 'written');
-                    }).toList(),
+                    }),
 
                     const SizedBox(height: 20),
                     const Align(alignment: Alignment.centerLeft, child: Text('Final Rank / Score', style: TextStyle(fontWeight: FontWeight.bold))),

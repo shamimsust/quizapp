@@ -126,7 +126,7 @@ class _ExamBuilderScreenState extends ConsumerState<ExamBuilderScreen> {
               onChanged: (v) => setState(() => _containsWritten = v),
               title: const Text('Allow Written/LaTeX Responses', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text('Students can type long-form answers and math.', style: TextStyle(fontSize: 12)),
-              activeColor: brandBlue,
+              activeThumbColor: brandBlue,
             ),
 
             const SizedBox(height: 40),
