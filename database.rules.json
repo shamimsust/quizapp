@@ -1,0 +1,49 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "exams": {
+      ".read": "auth != null", 
+      ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+    },
+    "examQuestions": {
+      "$examId": {
+    
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+      }
+    },
+    "examTokens": {
+      ".indexOn": ["examId"], 
+      "$token": {
+        ".read": "true", 
+        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+      }
+    },
+    "attempts": {
+      ".indexOn": ["status", "userId"], 
+      "$attemptId": {
+        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
+        ".write": "(!data.exists() && newData.child('userId').val() === auth.uid) || (data.child('userId').val() === auth.uid && data.child('status').val() === 'in_progress') || root.child('users').child(auth.uid).child('role').val() == 'admin'"
+      }
+    },
+    "attemptAnswers": {
+      "$attemptId": {
+        "$qId": {
+          ".read": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
+          ".write": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid && now < root.child('attempts').child($attemptId).child('endTime').val()"
+        }
+      }
+    },
+    "results": {
+      "$attemptId": {
+        ".read": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
+        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+      }
+    }
+  }
+}

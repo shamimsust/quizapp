@@ -1,0 +1,20 @@
+# Flutter/Dart/Pub
+.dart_tool/
+.packages
+build/
+.pub-cache/
+.flutter-plugins
+.flutter-plugins-dependencies
+.melos_tool
+
+# IntelliJ/VSCode
+.idea/
+.vscode/
+
+# Platform
+ios/Pods/
+android/.gradle/
+android/app/build/
+
+# Generated
+firebase_app_id_file.json

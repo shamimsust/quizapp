@@ -1,0 +1,137 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+// Admin Screens
+import 'screens/admin/admin_dashboard_screen.dart';
+import 'screens/admin/admin_signin_screen.dart';
+import 'screens/admin/exam_builder_screen.dart';
+import 'screens/admin/token_manager_screen.dart';
+import 'screens/admin/question_editor_screen.dart';
+import 'screens/admin/manual_grading_screen.dart';
+
+// Student Screens
+import 'screens/student/token_landing_screen.dart';
+import 'screens/student/exam_room_screen.dart';
+import 'screens/student/candidate_info_screen.dart';
+import 'screens/student/exam_instructions_screen.dart';
+import 'screens/student/submission_screen.dart';
+import 'screens/student/result_screen.dart';
+
+import 'providers/auth_providers.dart';
+import 'providers/role_provider.dart';
+import 'utils/go_router_refresh_stream.dart';
+
+final routerProvider = Provider<GoRouter>((ref) {
+  final authAsync = ref.watch(authStateProvider);
+  final roleAsync = ref.watch(userRoleProvider);
+
+  final user = authAsync.value;
+  final role = roleAsync.value;
+
+  return GoRouter(
+    initialLocation: '/',
+    refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
+    redirect: (context, state) {
+      final String loc = state.matchedLocation;
+      final bool goingAdmin = loc.startsWith('/admin');
+      final bool onAdminLogin = loc == '/admin/signin';
+      final bool onRoot = loc == '/';
+      final bool onLoading = loc == '/loading';
+
+      if (roleAsync.isLoading || roleAsync.isRefreshing) {
+        return '/loading';
+      }
+
+      if (onLoading && !roleAsync.isLoading) {
+        return '/'; 
+      }
+
+      if (user != null && role == 'admin') {
+        if (onRoot || onAdminLogin) return '/admin';
+        return null; 
+      }
+
+      if (goingAdmin) {
+        if (user == null) {
+          return onAdminLogin ? null : '/admin/signin';
+        }
+        if (role == null || role == 'unknown') return null; 
+        if (role == 'student') return '/';
+      }
+
+      return null;
+    },
+    routes: [
+      GoRoute(
+        path: '/loading',
+        builder: (context, state) => const Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: Color(0xFF2264D7)),
+                SizedBox(height: 16),
+                Text("Verifying access...", style: TextStyle(fontFamily: 'Inter', color: Colors.grey)),
+              ],
+            ),
+          ),
+        ),
+      ),
+
+      GoRoute(path: '/', builder: (_, __) => const TokenLandingScreen()),
+      
+      // ADMIN ROUTES
+      GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardScreen()),
+      GoRoute(path: '/admin/signin', builder: (_, __) => const AdminSignInScreen()),
+      GoRoute(path: '/admin/exam-builder', builder: (_, __) => const ExamBuilderScreen()),
+      GoRoute(path: '/admin/token-manager', builder: (_, __) => const TokenManagerScreen()),
+      
+      GoRoute(
+        path: '/admin/manual-grading', 
+        builder: (_, __) => const ManualGradingScreen()
+      ),
+      
+      GoRoute(
+          path: '/admin/exam-builder/questions/:examId',
+          builder: (ctx, st) => QuestionEditorScreen(examId: st.pathParameters['examId']!)),
+
+      // --- UPDATED STUDENT ROUTES ---
+      
+      // Fixed: This route now captures the ID from the URL path
+      GoRoute(
+        path: '/candidate/:examId', 
+        builder: (ctx, st) {
+          final id = st.pathParameters['examId'];
+          return CandidateInfoScreen(examId: id);
+        },
+      ),
+
+      // Keep this as a fallback for standard /candidate navigation
+      GoRoute(
+        path: '/candidate', 
+        builder: (ctx, st) {
+          final extra = st.extra as Map<String, dynamic>?;
+          return CandidateInfoScreen(examId: extra?['examId']);
+        },
+      ),
+
+      GoRoute(
+          path: '/e/:token',
+          builder: (ctx, st) => TokenLandingScreen(token: st.pathParameters['token'])),
+      GoRoute(
+          path: '/exam/:attemptId',
+          builder: (ctx, st) => ExamRoomScreen(attemptId: st.pathParameters['attemptId']!)),
+      GoRoute(
+          path: '/instructions/:examId',
+          builder: (ctx, st) => ExamInstructionsScreen(examId: st.pathParameters['examId']!)),
+      GoRoute(
+          path: '/submitted/:attemptId',
+          builder: (ctx, st) => SubmissionScreen(attemptId: st.pathParameters['attemptId']!)),
+      GoRoute(
+          path: '/result/:attemptId',
+          builder: (ctx, st) => ResultScreen(attemptId: st.pathParameters['attemptId']!)),
+    ],
+  );
+});

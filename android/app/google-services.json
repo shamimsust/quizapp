@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "964869146856",
+    "firebase_url": "https://math-quiz-app-893b2-default-rtdb.firebaseio.com",
+    "project_id": "math-quiz-app-893b2",
+    "storage_bucket": "math-quiz-app-893b2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:964869146856:android:2f6482f036625acf01e15d",
+        "android_client_info": {
+          "package_name": "com.example.math_quiz_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZZHG0cljI2yHMtpKyCE9yl4Qhs98uJl0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
