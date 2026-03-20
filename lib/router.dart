@@ -10,6 +10,7 @@ import 'screens/admin/exam_builder_screen.dart';
 import 'screens/admin/token_manager_screen.dart';
 import 'screens/admin/question_editor_screen.dart';
 import 'screens/admin/manual_grading_screen.dart';
+import 'screens/admin/exam_list_screen.dart'; 
 
 // Student Screens
 import 'screens/student/token_landing_screen.dart';
@@ -40,6 +41,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final bool onRoot = loc == '/';
       final bool onLoading = loc == '/loading';
 
+      // 1. Handle Loading States
       if (roleAsync.isLoading || roleAsync.isRefreshing) {
         return '/loading';
       }
@@ -48,11 +50,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/'; 
       }
 
+      // 2. Admin Access Control
       if (user != null && role == 'admin') {
         if (onRoot || onAdminLogin) return '/admin';
         return null; 
       }
 
+      // 3. Security Redirection
       if (goingAdmin) {
         if (user == null) {
           return onAdminLogin ? null : '/admin/signin';
@@ -64,6 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // GLOBAL LOADING
       GoRoute(
         path: '/loading',
         builder: (context, state) => const Scaffold(
@@ -82,50 +87,53 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       GoRoute(path: '/', builder: (_, __) => const TokenLandingScreen()),
       
-      // ADMIN ROUTES
+      // --- ADMIN ROUTES ---
       GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/signin', builder: (_, __) => const AdminSignInScreen()),
       GoRoute(path: '/admin/exam-builder', builder: (_, __) => const ExamBuilderScreen()),
       GoRoute(path: '/admin/token-manager', builder: (_, __) => const TokenManagerScreen()),
-      
-      GoRoute(
-        path: '/admin/manual-grading', 
-        builder: (_, __) => const ManualGradingScreen()
-      ),
-      
+      GoRoute(path: '/admin/exam-list', builder: (_, __) => const ExamListScreen()),
+      GoRoute(path: '/admin/manual-grading', builder: (_, __) => const ManualGradingScreen()),
       GoRoute(
           path: '/admin/exam-builder/questions/:examId',
           builder: (ctx, st) => QuestionEditorScreen(examId: st.pathParameters['examId']!)),
 
-      // --- UPDATED STUDENT ROUTES ---
+      // --- STUDENT ROUTES ---
       
-      // Fixed: This route now captures the ID from the URL path
+      // Landing from a direct link or token
+      GoRoute(
+          path: '/e/:token',
+          builder: (ctx, st) => TokenLandingScreen(token: st.pathParameters['token'])),
+      
+      // Instructions Page
+      GoRoute(
+          path: '/instructions/:examId',
+          builder: (ctx, st) => ExamInstructionsScreen(examId: st.pathParameters['examId']!)),
+
+      // Unified Candidate Registration
+      // Supports context.go('/candidate/ID') AND context.go('/candidate', extra: {'examId': ID})
       GoRoute(
         path: '/candidate/:examId', 
         builder: (ctx, st) {
-          final id = st.pathParameters['examId'];
-          return CandidateInfoScreen(examId: id);
+          final idFromPath = st.pathParameters['examId'];
+          final extra = st.extra as Map<String, dynamic>?;
+          return CandidateInfoScreen(examId: idFromPath ?? extra?['examId']);
         },
       ),
-
-      // Keep this as a fallback for standard /candidate navigation
+      
+      // Fallback for candidate route without path param
       GoRoute(
-        path: '/candidate', 
+        path: '/candidate',
         builder: (ctx, st) {
           final extra = st.extra as Map<String, dynamic>?;
           return CandidateInfoScreen(examId: extra?['examId']);
         },
       ),
 
-      GoRoute(
-          path: '/e/:token',
-          builder: (ctx, st) => TokenLandingScreen(token: st.pathParameters['token'])),
+      // Live Exam & Results
       GoRoute(
           path: '/exam/:attemptId',
           builder: (ctx, st) => ExamRoomScreen(attemptId: st.pathParameters['attemptId']!)),
-      GoRoute(
-          path: '/instructions/:examId',
-          builder: (ctx, st) => ExamInstructionsScreen(examId: st.pathParameters['examId']!)),
       GoRoute(
           path: '/submitted/:attemptId',
           builder: (ctx, st) => SubmissionScreen(attemptId: st.pathParameters['attemptId']!)),

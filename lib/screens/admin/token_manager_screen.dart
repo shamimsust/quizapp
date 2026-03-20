@@ -57,7 +57,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                         if (!snapshot.hasData) return const LinearProgressIndicator();
                         final exams = snapshot.data!;
                         return DropdownButtonFormField<String>(
-                          value: _selectedExamId,
+                          initialValue: _selectedExamId,
                           isExpanded: true,
                           decoration: const InputDecoration(
                             contentPadding: EdgeInsets.symmetric(horizontal: 12),

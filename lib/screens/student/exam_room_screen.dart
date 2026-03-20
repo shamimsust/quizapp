@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart'; // Add to pubspec.yaml if not present
+import 'package:intl/intl.dart'; 
 import '../../widgets/latex_text.dart'; 
 
 class ExamRoomScreen extends StatefulWidget {
@@ -79,7 +79,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
         }
       }
 
-      // Load existing progress
+      // Load existing progress from database
       final ansSnap = await _db.child('attemptAnswers/${widget.attemptId}').get();
       if (ansSnap.exists) {
         final existing = Map<dynamic, dynamic>.from(ansSnap.value as Map);
@@ -105,13 +105,13 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
     }
   }
 
-  // --- INPUT HANDLERS ---
-
   void _updateSyncStatus() {
     if (mounted) {
       setState(() => _lastSynced = DateTime.now());
     }
   }
+
+  // --- INPUT HANDLERS ---
 
   void _handleOptionTap(String qid, String optId, String type) async {
     final current = List<String>.from(_selected[qid] ?? <String>[]);
@@ -125,6 +125,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
 
     setState(() => _selected[qid] = current);
     
+    // Auto-save to Firebase
     await _db.child('attemptAnswers/${widget.attemptId}/$qid').update({
       'type': type,
       'selected': current,
@@ -142,20 +143,27 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
     _updateSyncStatus();
   }
 
-  // --- SUBMISSION LOGIC ---
+  // --- UPDATED SUBMISSION LOGIC ---
 
   Future<void> _submit() async {
     if (_submitting || !mounted) return;
     setState(() => _submitting = true);
 
     try {
+      // 1. Fetch Exam Metadata to check for global Manual Grading preference
+      final examId = attempt?['examId'];
+      final examSnap = await _db.child('exams/$examId').get();
+      final examMeta = examSnap.exists ? Map<String, dynamic>.from(examSnap.value as Map) : {};
+      
+      final bool forceManual = examMeta['isManualGrading'] ?? false;
       int totalPossible = 0;
       num obtainedScore = 0; 
-      bool needsManualGrading = false;
+      bool hasWrittenContent = false;
 
       final ansSnap = await _db.child('attemptAnswers/${widget.attemptId}').get();
       final userAnswers = (ansSnap.value as Map?) ?? {};
 
+      // 2. Loop through questions for scoring
       for (var q in questions) {
         final qid = q['id'];
         final type = q['type'] ?? 'mcq_single';
@@ -163,27 +171,30 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
         totalPossible += qMarks;
 
         if (type == 'written') {
-          needsManualGrading = true; 
+          hasWrittenContent = true; 
         } else {
           final List correct = q['correctOptions'] ?? [];
           final userEntry = userAnswers[qid];
           final List selected = (userEntry != null) ? (userEntry['selected'] ?? []) : [];
 
-          bool isCorrect = selected.length == correct.length &&
+          final bool isCorrect = selected.length == correct.length &&
               selected.every((e) => correct.contains(e));
 
           if (isCorrect) obtainedScore += qMarks;
         }
       }
 
-      final finalStatus = needsManualGrading ? 'submitted' : 'completed';
+      // 3. Determine status: If Force Manual (BP Ranks) or Written exists, set to 'submitted'
+      final bool needsReview = forceManual || hasWrittenContent;
+      final finalStatus = needsReview ? 'submitted' : 'completed';
 
       await _db.child('attempts/${widget.attemptId}').update({
         'status': finalStatus,
         'score': obtainedScore,
         'totalPossible': totalPossible,
-        'isManualGraded': needsManualGrading,
-        'submittedAt': ServerValue.timestamp
+        'isManualGraded': needsReview,
+        'submittedAt': ServerValue.timestamp,
+        'examTitle': examMeta['title'] ?? 'Quiz',
       });
       
       if (mounted) context.go('/submitted/${widget.attemptId}');
@@ -199,12 +210,13 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Submission', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to end the exam? Your answers will be final.'),
+        content: const Text('Are you sure you want to end the quiz? Your answers will be submitted for grading.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('BACK', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             onPressed: () => Navigator.pop(context, true), 
             child: const Text('SUBMIT NOW', style: TextStyle(color: Colors.white))
           ),
@@ -226,14 +238,13 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: const Text('Live Exam', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
+        title: const Text('Live Quiz', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
         backgroundColor: brandBlue,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // Connection Status Widget
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -241,27 +252,16 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _isConnected ? Colors.greenAccent : Colors.orangeAccent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: _isConnected ? Colors.greenAccent : Colors.orangeAccent, shape: BoxShape.circle)),
                     const SizedBox(width: 6),
-                    Text(_isConnected ? "Synced" : "Offline", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                    const SizedBox(width: 12),
+                    Text(_isConnected ? "Synced" : "Offline", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ],
                 ),
                 Text("Last: $syncTime", style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.8))),
               ],
             ),
           ),
-          IconButton(
-            onPressed: _submitting ? null : _confirmAndSubmit,
-            icon: const Icon(Icons.send_rounded),
-          ),
+          IconButton(onPressed: _submitting ? null : _confirmAndSubmit, icon: const Icon(Icons.send_rounded)),
         ],
       ),
       body: Column(
@@ -269,7 +269,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             width: double.infinity,
-            color: Colors.white,
+            decoration: BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
             child: Center(
               child: (endTime > 0) 
                   ? ExamTimer(endTimeMs: endTime, onTimeUp: _submit)
@@ -290,10 +290,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                 return Card(
                   elevation: 0,
                   margin: const EdgeInsets.only(bottom: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: Colors.grey.shade300)
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade300)),
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -313,7 +310,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                             controller: _controllers.putIfAbsent(qid, () => TextEditingController()),
                             maxLines: 5,
                             decoration: InputDecoration(
-                              hintText: 'Type your answer here...',
+                              hintText: 'Type your answer here (LaTeX supported)...',
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               fillColor: Colors.grey.shade50,
                               filled: true,
@@ -338,11 +335,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(
-                                      isSelected ? Icons.check_circle : Icons.radio_button_off,
-                                      color: isSelected ? brandBlue : Colors.grey,
-                                      size: 20,
-                                    ),
+                                    Icon(isSelected ? Icons.check_circle : Icons.radio_button_off, color: isSelected ? brandBlue : Colors.grey, size: 20),
                                     const SizedBox(width: 12),
                                     Expanded(child: LatexText(optText, size: 15)),
                                   ],
@@ -396,9 +389,7 @@ class _ExamTimerState extends State<ExamTimer> {
     
     if (diff <= 60000 && diff > 0 && !_warned) {
       _warned = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showWarning();
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showWarning(); });
     }
 
     if (diff <= 0) {
@@ -413,20 +404,10 @@ class _ExamTimerState extends State<ExamTimer> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Hurry Up!'),
-          ],
-        ),
-        content: const Text('Only 1 minute remaining. Your exam will be automatically submitted once the timer ends.'),
+        title: const Row(children: [Icon(Icons.warning_amber_rounded, color: Colors.red), SizedBox(width: 8), Text('Time is almost up!')]),
+        content: const Text('You have 1 minute left. The quiz will auto-submit when the timer reaches zero.'),
         actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7)),
-            onPressed: () => Navigator.pop(context), 
-            child: const Text('OKAY', style: TextStyle(color: Colors.white))
-          ),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7)), onPressed: () => Navigator.pop(context), child: const Text('GOT IT', style: TextStyle(color: Colors.white))),
         ],
       ),
     );
@@ -444,7 +425,6 @@ class _ExamTimerState extends State<ExamTimer> {
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     final hh = d.inHours.toString().padLeft(2, '0');
-    
     final bool isUrgent = remaining < 300000; 
 
     return Container(
@@ -459,14 +439,7 @@ class _ExamTimerState extends State<ExamTimer> {
         children: [
           Icon(Icons.timer_outlined, size: 18, color: isUrgent ? Colors.red : const Color(0xFF2264D7)),
           const SizedBox(width: 8),
-          Text('$hh:$mm:$ss', 
-            style: TextStyle(
-              fontWeight: FontWeight.bold, 
-              fontFamily: 'monospace',
-              color: isUrgent ? Colors.red : const Color(0xFF2264D7),
-              fontSize: 16
-            )
-          ),
+          Text('$hh:$mm:$ss', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'monospace', color: isUrgent ? Colors.red : const Color(0xFF2264D7), fontSize: 16)),
         ],
       ),
     );

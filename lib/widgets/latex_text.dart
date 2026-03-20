@@ -15,7 +15,7 @@ class LatexText extends StatelessWidget {
     final parts = text.split(regex);
     final matches = regex.allMatches(text).map((m) => m.group(0)).toList();
 
-    List<Widget> spans = [];
+    final List<Widget> spans = [];
 
     for (var i = 0; i < parts.length; i++) {
       // 1. Add the plain text part (Bangla/English)

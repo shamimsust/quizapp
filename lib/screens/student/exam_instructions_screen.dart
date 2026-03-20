@@ -9,60 +9,146 @@ class ExamInstructionsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch the exam metadata for this specific ID
+    const Color brandBlue = Color.fromRGBO(34, 100, 215, 1);
     final examAsync = ref.watch(examProvider(examId));
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Exam Instructions', style: TextStyle(fontFamily: 'Inter')), //
-        backgroundColor: const Color(0xFF2264D7), // #2264D7
+        title: const Text('Exam Preparation', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
+        backgroundColor: brandBlue,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: examAsync.when(
-        data: (exam) => Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                exam?.title ?? 'Untitled Exam',
-                style: const TextStyle(
-                  fontSize: 24, 
-                  fontWeight: FontWeight.bold, 
-                  fontFamily: 'Inter', //
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Display duration converted from milliseconds
-              Text('Duration: ${(exam?.durationMs ?? 0) ~/ 60000} minutes'),
-              const Divider(height: 40),
-              const Text(
-                'Instructions:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 12),
-              const Text('1. Ensure you have a stable internet connection.'),
-              const Text('2. Do not refresh or leave the page once the exam starts.'),
-              const Text('3. All mathematical answers should be entered in the LaTeX field.'),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2264D7), //
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+        data: (exam) {
+          if (exam == null) return const Center(child: Text('Exam not found.'));
+
+          final int durationMin = (exam.durationMs ?? 0) ~/ 60000;
+          // Check the grading mode we defined in ExamBuilder
+          final bool isManual = exam.isManualGrading ?? false;
+
+          return SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header Card
+                  _buildHeaderCard(exam.title ?? 'Untitled Exam', durationMin, isManual, brandBlue),
+                  
+                  const SizedBox(height: 32),
+                  
+                  const Text('Instructions & Rules', 
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                  const SizedBox(height: 16),
+                  
+                  _buildInstructionItem(Icons.wifi, 'Stable Connection', 'Ensure you have a reliable internet connection before starting.'),
+                  _buildInstructionItem(Icons.block, 'No Refreshing', 'Refreshing or leaving the page may result in immediate submission.'),
+                  _buildInstructionItem(Icons.functions, 'LaTeX Support', 'Use the dedicated math field for formulas and equations.'),
+                  _buildInstructionItem(Icons.history, 'Auto-Save', 'Your progress is synced in real-time. If you disconnect, just log back in.'),
+
+                  const SizedBox(height: 40),
+                  
+                  // Start Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: brandBlue,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: () => context.go('/candidate', extra: {'examId': examId}),
+                      child: const Text('I Understand, Start Quiz', 
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
                   ),
-                  onPressed: () {
-                    // Navigate to the candidate info screen to start the attempt
-                    context.go('/candidate', extra: {'examId': examId});
-                  },
-                  child: const Text('I Understand, Continue', style: TextStyle(color: Colors.white)),
-                ),
+                  const SizedBox(height: 16),
+                  const Center(
+                    child: Text('By clicking start, the timer will begin immediately.', 
+                      style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: brandBlue)),
+        error: (err, _) => Center(child: Text('Error loading instructions: $err')),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(String title, int duration, bool isManual, Color brandBlue) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              _buildMetaBadge(Icons.timer_outlined, '$duration Min', brandBlue),
+              const SizedBox(width: 12),
+              _buildMetaBadge(
+                isManual ? Icons.rate_review_outlined : Icons.bolt, 
+                isManual ? 'Manual Grading' : 'Auto-Graded', 
+                isManual ? Colors.orange.shade800 : Colors.green.shade700
               ),
             ],
           ),
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('Error loading instructions: $err')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetaBadge(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInstructionItem(IconData icon, String title, String desc) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade200)),
+            child: Icon(icon, size: 18, color: const Color(0xFF2264D7)),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(desc, style: const TextStyle(fontSize: 13, color: Colors.blueGrey, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

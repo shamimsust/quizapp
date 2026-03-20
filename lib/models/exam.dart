@@ -6,7 +6,8 @@ class Exam {
   final String description;
   final int durationMs;
   final bool containsWritten;
-  final List<Question>? questions; //
+  final bool isManualGrading; // Supports BP Ranks and Manual Grading
+  final List<Question>? questions;
 
   Exam({
     required this.id,
@@ -14,6 +15,7 @@ class Exam {
     required this.description,
     required this.durationMs,
     required this.containsWritten,
+    this.isManualGrading = false,
     this.questions,
   });
 
@@ -22,6 +24,7 @@ class Exam {
         'description': description,
         'durationMs': durationMs,
         'containsWritten': containsWritten,
+        'isManualGrading': isManualGrading,
         if (questions != null) 'questions': questions!.map((e) => e.toJson()).toList(),
       };
 
@@ -31,18 +34,19 @@ class Exam {
         description: data['description'] ?? '',
         durationMs: data['durationMs'] ?? 0,
         containsWritten: data['containsWritten'] ?? false,
+        isManualGrading: data['isManualGrading'] ?? false,
         questions: (data['questions'] as List?)
             ?.map((q) => Question.fromJson(q['id'] ?? '', Map.from(q)))
             .toList(),
       );
 
-  // Security factory for students
   factory Exam.forStudent(String id, Map data) => Exam(
         id: id,
         title: data['title'] ?? '',
         description: data['description'] ?? '',
         durationMs: data['durationMs'] ?? 0,
         containsWritten: data['containsWritten'] ?? false,
+        isManualGrading: data['isManualGrading'] ?? false,
         questions: (data['questions'] as List?)
             ?.map((q) => Question.forStudent(q['id'] ?? '', Map.from(q)))
             .toList(),

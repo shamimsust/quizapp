@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Added for direct check
 
 class TokenLandingScreen extends StatefulWidget {
   final String? token;
@@ -22,7 +22,8 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.token != null) {
+    // If a token is passed via URL/Deep link, auto-validate it
+    if (widget.token != null && widget.token!.isNotEmpty) {
       _tokenController.text = widget.token!;
       WidgetsBinding.instance.addPostFrameCallback((_) => _validateToken());
     }
@@ -45,20 +46,19 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
     });
 
     try {
-      // --- FIX: AUTHENTICATE FIRST ---
-      // This prevents the "Connection error" caused by permission denied
+      // 1. Ensure the student is authenticated anonymously to read from DB
       if (FirebaseAuth.instance.currentUser == null) {
         await AuthService().signInStudentAnonymously();
       }
 
-      // --- FIX: VALIDATE TOKEN PATH SEGMENT ---
-      // Prevents "Invalid token in path" error
+      // 2. Sanitize: Firebase paths cannot contain certain characters
       final invalidCharRegex = RegExp(r'[.#$\[\]/]');
       if (invalidCharRegex.hasMatch(token)) {
         setState(() => _error = 'Token contains invalid characters.');
         return;
       }
 
+      // 3. Check Realtime Database
       final snap = await FirebaseDatabase.instance.ref('examTokens').child(token).get();
       
       if (!snap.exists) {
@@ -69,36 +69,34 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
       final data = Map<dynamic, dynamic>.from(snap.value as Map);
       final fetchedExamId = data['examId']?.toString();
 
-      if (fetchedExamId == null || fetchedExamId.isEmpty || invalidCharRegex.hasMatch(fetchedExamId)) {
-        setState(() => _error = 'This token points to an invalid exam configuration.');
+      if (fetchedExamId == null || fetchedExamId.isEmpty) {
+        setState(() => _error = 'This token points to an invalid quiz configuration.');
         return;
       }
 
       setState(() => _examId = fetchedExamId);
     } catch (e) {
-      //
+      debugPrint("Token Validation Error: $e");
       setState(() => _error = 'Connection error. Please try again.');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEFF2F6),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: GestureDetector(
-          onLongPress: () => context.push('/admin/signin'),
-          child: const Text('Join Exam Room', style: TextStyle(fontFamily: 'Inter')),
-        ),
+        title: const Text('Join Quiz Room', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
+            icon: const Icon(Icons.admin_panel_settings_outlined),
             onPressed: () => context.push('/admin/signin'),
-            tooltip: 'Admin Login',
+            tooltip: 'Admin Portal',
           ),
         ],
       ),
@@ -108,89 +106,101 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Enter your invitation token to proceed to the exam instructions.',
-              style: TextStyle(color: Colors.black54, fontSize: 14),
+              'Enter the invitation token provided by your instructor to proceed.',
+              style: TextStyle(color: Colors.black54, fontSize: 15),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
+            
+            // TOKEN INPUT
             TextField(
               controller: _tokenController,
-              onChanged: (_) => setState(() { _examId = null; _error = null; }),
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (val) {
+                // Reset state if they change the token after validation
+                if (_examId != null || _error != null) {
+                  setState(() { _examId = null; _error = null; });
+                }
+              },
               decoration: InputDecoration(
-                labelText: 'Exam Token',
-                hintText: 'e.g., MATH-FINAL-2026',
+                labelText: 'Quiz Token',
+                hintText: 'e.g., MATH-101',
                 filled: true,
                 fillColor: Colors.white,
-                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.check_circle_outline),
+                  icon: const Icon(Icons.arrow_forward_rounded),
                   onPressed: _isLoading ? null : _validateToken,
                 ),
               ),
+              onSubmitted: (_) => _validateToken(),
             ),
-            const SizedBox(height: 20),
             
+            const SizedBox(height: 24),
+            
+            // LOADING & FEEDBACK STATES
             if (_isLoading)
               const Center(child: CircularProgressIndicator())
             else if (_error != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
-                  ],
-                ),
+              _buildFeedbackBox(
+                icon: Icons.error_outline,
+                color: Colors.red,
+                text: _error!,
               )
             else if (_examId != null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.verified, color: Colors.green),
-                    SizedBox(width: 12),
-                    Text('Token Validated Successfully!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                  ],
-                ),
+              _buildFeedbackBox(
+                icon: Icons.check_circle_rounded,
+                color: Colors.green,
+                text: 'Token Validated! Click below to continue.',
               ),
 
             const Spacer(),
             
+            // ACTION BUTTON
             SizedBox(
               width: double.infinity,
-              height: 54,
+              height: 56,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _primaryBlue,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                 ),
                 onPressed: _examId == null ? null : _handleContinue,
                 child: const Text(
-                  'Continue to Details',
+                  'Continue to Registration',
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
-            )
+            ),
+            const SizedBox(height: 12),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _handleContinue() async {
-    final token = _tokenController.text.trim();
-    if (token.isEmpty) return;
+  Widget _buildFeedbackBox({required IconData icon, required Color color, required String text}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
+  }
 
-    if (mounted) {
-      // Token is already validated, proceed to the candidate details screen
-      context.go('/candidate/$token');
-    }
+  void _handleContinue() {
+    final token = _tokenController.text.trim();
+    context.go('/candidate/$token');
   }
 }

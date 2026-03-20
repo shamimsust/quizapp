@@ -24,6 +24,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
         elevation: 0,
       ),
       body: StreamBuilder(
+        // Listening for all submitted attempts
         stream: _db.child('attempts').orderByChild('status').equalTo('submitted').onValue,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -31,27 +32,18 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
           }
 
           if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.fact_check_outlined, size: 80, color: Colors.grey.shade300),
-                  const SizedBox(height: 16),
-                  const Text('All Caught Up!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                  const Text('No submissions waiting for grading.', style: TextStyle(color: Colors.grey)),
-                ],
-              ),
-            );
+            return _buildEmptyState();
           }
 
           final Map<dynamic, dynamic> attempts = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+          final attemptList = attempts.entries.toList();
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: attempts.length,
+            itemCount: attemptList.length,
             itemBuilder: (context, index) {
-              final String id = attempts.keys.elementAt(index);
-              final attempt = Map<String, dynamic>.from(attempts[id]);
+              final String id = attemptList[index].key.toString();
+              final attempt = Map<String, dynamic>.from(attemptList[index].value as Map);
               final candidate = attempt['candidate'] ?? {};
 
               return Card(
@@ -69,11 +61,11 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                   ),
                   title: Text(candidate['name'] ?? 'Anonymous Student', 
                       style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter')),
-                  subtitle: Text('ID: $id\nEmail: ${candidate['email'] ?? 'N/A'}', style: const TextStyle(fontSize: 12)),
+                  subtitle: Text('Exam: ${attempt['examTitle'] ?? 'Unknown'}\nEmail: ${candidate['email'] ?? 'N/A'}', 
+                      style: const TextStyle(fontSize: 12)),
                   trailing: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _primaryBlue,
-                      elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: () => _openGradingModal(id, attempt),
@@ -91,15 +83,21 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
   void _openGradingModal(String attemptId, Map<String, dynamic> attempt) async {
     final String candidateName = attempt['candidate']?['name'] ?? 'Student';
     final String examId = attempt['examId'] ?? '';
-    final scoreController = TextEditingController();
     
-    // Fetch original questions and student answers
-    final List<Future<DataSnapshot>> futures = [
+    // Pre-fill score if one exists (e.g. from auto-grading)
+    final scoreController = TextEditingController(text: attempt['score']?.toString() ?? '');
+    
+    // Show Loading while fetching details
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+
+    // Fetch original questions and student's specific answers
+    final results = await Future.wait([
       _db.child('exams/$examId/questions').get(),
       _db.child('attemptAnswers/$attemptId').get(),
-    ];
+    ]);
     
-    final results = await Future.wait(futures);
+    if (mounted) Navigator.pop(context); // Close loading dialog
+
     final Map<dynamic, dynamic> originalQuestions = (results[0].value as Map?) ?? {};
     final Map<dynamic, dynamic> studentAnswers = (results[1].value as Map?) ?? {};
 
@@ -111,21 +109,17 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.85, // Take up 85% of screen
+        height: MediaQuery.of(context).size.height * 0.9,
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          left: 24, right: 24, top: 24
+          left: 20, right: 20, top: 20
         ),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text('Grading: $candidateName', 
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Inter'),
-                    overflow: TextOverflow.ellipsis),
-                ),
+                Text('Grading: $candidateName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
               ],
             ),
@@ -133,96 +127,28 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 12),
                     if (studentAnswers.isEmpty)
-                      const Center(child: Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Text("No answers recorded for this attempt."),
-                      )),
+                      const Padding(padding: EdgeInsets.all(40), child: Text("No detailed answers found.")),
 
-                    ...studentAnswers.entries.toList().asMap().entries.map((entry) {
-                      final int serial = entry.key + 1;
-                      final String qId = entry.value.key.toString();
-                      final studentData = Map<String, dynamic>.from(entry.value.value as Map);
-                      
+                    ...studentAnswers.entries.map((entry) {
+                      final String qId = entry.key.toString();
+                      final studentData = Map<String, dynamic>.from(entry.value as Map);
                       final questionObj = originalQuestions[qId];
-                      String originalText;
-                      if (questionObj != null) {
-                        originalText = (questionObj['stem'] ?? questionObj['text'] ?? "Question content missing.");
-                      } else {
-                        originalText = "Question ID Mismatch: $qId";
-                      }
+                      
+                      final String originalStem = questionObj != null ? (questionObj['stem'] ?? "No stem text") : "Missing Question";
+                      final String studentResponse = studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A");
 
-                      final String responseText = studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A");
+                      return _buildAnswerCard(originalStem, studentResponse, studentData['type'] ?? 'written');
+                    }).toList(),
 
-                      return Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 24),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('QUESTION $serial', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: _primaryBlue, letterSpacing: 1.1)),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
-                                  child: Text(studentData['type']?.toString().toUpperCase() ?? 'WRITTEN', 
-                                      style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            
-                            // ORIGINAL QUESTION (Mixed Mode)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFF),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: LatexText(originalText, size: 14),
-                            ),
-                            
-                            const SizedBox(height: 16),
-                            const Text('STUDENT RESPONSE:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blueGrey)),
-                            const SizedBox(height: 8),
-                            
-                            // STUDENT RESPONSE (Mixed Mode)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: Border.all(color: _primaryBlue.withOpacity(0.1)),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: LatexText(responseText, size: 15, color: _primaryBlue),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-
-                    const Text('Final Evaluation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 20),
+                    const Align(alignment: Alignment.centerLeft, child: Text('Final Rank / Score', style: TextStyle(fontWeight: FontWeight.bold))),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: scoreController,
-                      keyboardType: TextInputType.text,
                       decoration: InputDecoration(
-                        labelText: 'Final Rank / Score',
-                        hintText: 'e.g. 1st, 2nd or points',
-                        prefixIcon: const Icon(Icons.emoji_events_outlined),
+                        hintText: 'Enter Rank (e.g., 1st) or Points',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         filled: true,
                         fillColor: Colors.grey.shade50,
@@ -231,40 +157,74 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
-                      height: 54,
+                      height: 50,
                       child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
+                        style: ElevatedButton.styleFrom(backgroundColor: _primaryBlue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                         onPressed: () async {
-                          final String finalGrade = scoreController.text.trim();
-                          if (finalGrade.isEmpty) return;
-                          
                           await _db.child('attempts/$attemptId').update({
                             'status': 'completed',
-                            'score': finalGrade,
+                            'score': scoreController.text.trim(),
                             'gradedAt': ServerValue.timestamp,
                             'isManualGraded': true,
                           });
-
-                          if (mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Grade saved successfully!'), backgroundColor: Colors.green),
-                            );
-                          }
+                          if (mounted) Navigator.pop(context);
                         },
-                        child: const Text('Confirm & Save Grade', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: const Text('Complete Grading', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAnswerCard(String stem, String response, String type) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(type.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _primaryBlue)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LatexText(stem, size: 14),
+          const Divider(height: 30),
+          const Text('STUDENT RESPONSE:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            width: double.infinity,
+            decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(8)),
+            child: LatexText(response, size: 15, color: _primaryBlue),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.done_all_rounded, size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          const Text("No pending submissions!", style: TextStyle(fontSize: 16, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }

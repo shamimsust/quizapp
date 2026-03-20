@@ -21,6 +21,7 @@ dependencies:
   math_keyboard: ^0.3.0
   uuid: ^4.3.3
   google_fonts: ^8.0.2
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
