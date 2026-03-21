@@ -24,9 +24,9 @@ class ExamInstructionsScreen extends ConsumerWidget {
         data: (exam) {
           if (exam == null) return const Center(child: Text('Exam not found.'));
 
-          final int durationMin = (exam.durationMs ?? 0) ~/ 60000;
+          final int durationMin = exam.durationMs ~/ 60000;
           // Check the grading mode we defined in ExamBuilder
-          final bool isManual = exam.isManualGrading ?? false;
+          final bool isManual = exam.isManualGrading;
 
           return SingleChildScrollView(
             child: Padding(
@@ -35,7 +35,7 @@ class ExamInstructionsScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header Card
-                  _buildHeaderCard(exam.title ?? 'Untitled Exam', durationMin, isManual, brandBlue),
+                  _buildHeaderCard(exam.title, durationMin, isManual, brandBlue),
                   
                   const SizedBox(height: 32),
                   
@@ -89,7 +89,7 @@ class ExamInstructionsScreen extends ConsumerWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(8), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +115,7 @@ class ExamInstructionsScreen extends ConsumerWidget {
   Widget _buildMetaBadge(IconData icon, String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: color.withAlpha(26), borderRadius: BorderRadius.circular(8)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -72,9 +72,9 @@ class _SubmissionScreenState extends State<SubmissionScreen> with SingleTickerPr
                   child: Container(
                     padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
-                      color: brandBlue.withOpacity(0.08),
+                      color: brandBlue.withAlpha(20),
                       shape: BoxShape.circle,
-                      border: Border.all(color: brandBlue.withOpacity(0.1), width: 2),
+                      border: Border.all(color: brandBlue.withAlpha(26), width: 2),
                     ),
                     child: const Icon(
                       Icons.check_circle_rounded, 

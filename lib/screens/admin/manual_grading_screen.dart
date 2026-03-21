@@ -56,7 +56,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   leading: CircleAvatar(
-                    backgroundColor: _primaryBlue.withOpacity(0.1),
+                    backgroundColor: _primaryBlue.withAlpha(26),
                     child: Icon(Icons.person_search_outlined, color: _primaryBlue),
                   ),
                   title: Text(candidate['name'] ?? 'Anonymous Student', 

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_database/firebase_database.dart';
-import '../../models/exam.dart';
-import '../../services/exam_service.dart';
 
 class ExamBuilderScreen extends ConsumerStatefulWidget {
   final String? examId;
@@ -148,7 +146,7 @@ class _ExamBuilderScreenState extends ConsumerState<ExamBuilderScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? brandBlue.withOpacity(0.05) : Colors.white,
+          color: isSelected ? brandBlue.withAlpha((255 * 0.05).round()) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: isSelected ? brandBlue : Colors.grey.shade300, width: isSelected ? 2 : 1),
         ),

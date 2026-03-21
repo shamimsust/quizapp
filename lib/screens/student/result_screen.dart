@@ -131,7 +131,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
           width: 140,
           height: 140,
           decoration: BoxDecoration(
-            color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withOpacity(0.08),
+            color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withAlpha(20),
             shape: BoxShape.circle,
           ),
         ),
@@ -152,7 +152,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 30, offset: const Offset(0, 15))
+          BoxShadow(color: Colors.black.withAlpha(8), blurRadius: 30, offset: const Offset(0, 15))
         ],
         border: Border.all(color: Colors.grey.shade100),
       ),
@@ -178,9 +178,9 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             decoration: BoxDecoration(
-              color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withOpacity(0.08),
+              color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withAlpha(20),
               borderRadius: BorderRadius.circular(100),
-              border: Border.all(color: isPending ? Colors.orange.shade100 : brandBlue.withOpacity(0.1)),
+              border: Border.all(color: isPending ? Colors.orange.shade100 : brandBlue.withAlpha(26)),
             ),
             child: Text(
               isPending ? "GRADING IN PROGRESS" : "${percent.toStringAsFixed(1)}% ACCURACY",

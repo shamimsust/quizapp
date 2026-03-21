@@ -257,7 +257,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                     Text(_isConnected ? "Synced" : "Offline", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                Text("Last: $syncTime", style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.8))),
+                Text("Last: $syncTime", style: TextStyle(fontSize: 9, color: Colors.white.withAlpha(204))),
               ],
             ),
           ),
@@ -329,7 +329,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                                 margin: const EdgeInsets.only(bottom: 10),
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? brandBlue.withOpacity(0.05) : Colors.white,
+                                  color: isSelected ? brandBlue.withAlpha(13) : Colors.white,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(color: isSelected ? brandBlue : Colors.grey.shade300, width: 1.5),
                                 ),
@@ -430,7 +430,7 @@ class _ExamTimerState extends State<ExamTimer> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: isUrgent ? Colors.red.shade50 : const Color(0xFF2264D7).withOpacity(0.1),
+        color: isUrgent ? Colors.red.shade50 : const Color(0xFF2264D7).withAlpha(26),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isUrgent ? Colors.red : const Color(0xFF2264D7)),
       ),
