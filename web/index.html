@@ -6,11 +6,59 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Flutter Exam Platform">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Exam Platform</title>
+  
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>Exam Platform | Admin & Candidate Portal</title>
+  
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+
+  <style>
+    body {
+      inset: 0; overflow: hidden; margin: 0; padding: 0; position: fixed;
+      background-color: #F8FAFC; /* Matches your app's background */
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    .container {
+      text-align: center;
+    }
+    .loader {
+      width: 48px; height: 48px;
+      border: 5px solid #E2E8F0;
+      border-bottom-color: #2264D7; /* Your primaryBlue */
+      border-radius: 50%;
+      display: inline-block;
+      box-sizing: border-box;
+      animation: rotation 1s linear infinite;
+    }
+    .loading-text {
+      margin-top: 20px;
+      color: #64748B;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    @keyframes rotation {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <div id="loading-indicator" class="container">
+    <span class="loader"></span>
+    <div class="loading-text">Initializing Exam Environment...</div>
+  </div>
+
+  <script>
+    window.addEventListener('load', function(ev) {
+      // The flutter_bootstrap.js handles the engine initialization.
+      // Once the first frame is rendered, the loader will be covered by the Canvas.
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
