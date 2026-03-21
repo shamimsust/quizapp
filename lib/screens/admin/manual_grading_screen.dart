@@ -18,17 +18,18 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFEFF2F6),
       appBar: AppBar(
-        title: const Text('Manual Grading', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
+        title: const Text('MANUAL GRADING', 
+          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 14)),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
+        centerTitle: true,
         elevation: 0,
       ),
       body: StreamBuilder(
-        // Listening for all submitted attempts
         stream: _db.child('attempts').orderByChild('status').equalTo('submitted').onValue,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(child: CircularProgressIndicator(color: _primaryBlue));
           }
 
           if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
@@ -49,27 +50,28 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
               return Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  side: BorderSide(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   leading: CircleAvatar(
-                    backgroundColor: _primaryBlue.withAlpha(26),
+                    backgroundColor: _primaryBlue.withValues(alpha: 0.1),
                     child: Icon(Icons.person_search_outlined, color: _primaryBlue),
                   ),
                   title: Text(candidate['name'] ?? 'Anonymous Student', 
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontFamily: 'Inter', color: Color(0xFF1E293B))),
                   subtitle: Text('Exam: ${attempt['examTitle'] ?? 'Unknown'}\nEmail: ${candidate['email'] ?? 'N/A'}', 
-                      style: const TextStyle(fontSize: 12)),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                   trailing: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _primaryBlue,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: () => _openGradingModal(id, attempt),
-                    child: const Text('Review', style: TextStyle(color: Colors.white)),
+                    child: const Text('Review', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ),
               );
@@ -83,14 +85,11 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
   void _openGradingModal(String attemptId, Map<String, dynamic> attempt) async {
     final String candidateName = attempt['candidate']?['name'] ?? 'Student';
     final String examId = attempt['examId'] ?? '';
-    
-    // Pre-fill score if one exists (e.g. from auto-grading)
     final scoreController = TextEditingController(text: attempt['score']?.toString() ?? '');
     
-    // Show Loading while fetching details
+    // Show Loading
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
 
-    // Fetch original questions and student's specific answers
     final results = await Future.wait([
       _db.child('exams/$examId/questions').get(),
       _db.child('attemptAnswers/$attemptId').get(),
@@ -119,17 +118,18 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Grading: $candidateName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                Text('Grading: $candidateName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
               ],
             ),
             const Divider(),
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (studentAnswers.isEmpty)
-                      const Padding(padding: EdgeInsets.all(40), child: Text("No detailed answers found.")),
+                      const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("No detailed answers found."))),
 
                     ...studentAnswers.entries.map((entry) {
                       final String qId = entry.key.toString();
@@ -143,33 +143,32 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                     }),
 
                     const SizedBox(height: 20),
-                    const Align(alignment: Alignment.centerLeft, child: Text('Final Rank / Score', style: TextStyle(fontWeight: FontWeight.bold))),
+                    const Text('FINAL RANKING / SCORE', 
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF64748B), letterSpacing: 1.2)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: scoreController,
                       decoration: InputDecoration(
-                        hintText: 'Enter Rank (e.g., 1st) or Points',
+                        hintText: 'e.g. 1st, 2nd or points...',
+                        helperText: 'Using Rank Option as per BP requirements',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: const Color(0xFFF8FAFC),
                       ),
                     ),
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
-                      height: 50,
+                      height: 56,
                       child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: _primaryBlue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                        onPressed: () async {
-                          await _db.child('attempts/$attemptId').update({
-                            'status': 'completed',
-                            'score': scoreController.text.trim(),
-                            'gradedAt': ServerValue.timestamp,
-                            'isManualGraded': true,
-                          });
-                          if (mounted) Navigator.pop(context);
-                        },
-                        child: const Text('Complete Grading', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryBlue, 
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => _submitFinalGrade(attemptId, scoreController.text.trim()),
+                        child: const Text('COMPLETE GRADING', 
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
                       ),
                     ),
                   ],
@@ -182,34 +181,65 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     );
   }
 
+  // FIXED: Captured context-dependent objects before the async gap
+  Future<void> _submitFinalGrade(String attemptId, String score) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    try {
+      await _db.child('attempts/$attemptId').update({
+        'status': 'completed',
+        'score': score,
+        'gradedAt': ServerValue.timestamp,
+        'isManualGraded': true,
+      });
+
+      messenger.showSnackBar(const SnackBar(content: Text('Grading finalized successfully!'), backgroundColor: Colors.green));
+      navigator.pop(); // Close BottomSheet
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Error saving: $e'), backgroundColor: Colors.redAccent));
+    }
+  }
+
   Widget _buildAnswerCard(String stem, String response, String type) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(type.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _primaryBlue)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          LatexText(stem, size: 14),
-          const Divider(height: 30),
-          const Text('STUDENT RESPONSE:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-          const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: _primaryBlue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(type.toUpperCase(), 
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: _primaryBlue)),
+          ),
+          const SizedBox(height: 12),
+          LatexText(stem, size: 14),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+          ),
+          const Text('STUDENT RESPONSE:', 
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF94A3B8), letterSpacing: 0.5)),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
             width: double.infinity,
-            decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(8)),
-            child: LatexText(response, size: 15, color: _primaryBlue),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC), 
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _primaryBlue.withValues(alpha: 0.05)),
+            ),
+            child: LatexText(response, size: 15, color: const Color(0xFF1E293B)),
           ),
         ],
       ),
@@ -221,9 +251,10 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.done_all_rounded, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text("No pending submissions!", style: TextStyle(fontSize: 16, color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+          Icon(Icons.checklist_rtl_rounded, size: 80, color: Colors.grey.withValues(alpha: 0.2)),
+          const SizedBox(height: 24),
+          const Text("Inbox Zero!", style: TextStyle(fontSize: 18, color: Color(0xFF64748B), fontWeight: FontWeight.w800, fontFamily: 'Inter')),
+          const Text("All pending submissions have been graded.", style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8))),
         ],
       ),
     );
