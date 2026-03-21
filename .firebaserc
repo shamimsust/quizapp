@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "math-quiz-app-893b2"
+  },
+  "targets": {
+    "math-quiz-app-893b2": {
+      "hosting": {
+        "main-site": [
+          "tariqulislam"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

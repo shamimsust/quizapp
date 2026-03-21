@@ -11,6 +11,7 @@ import 'screens/admin/token_manager_screen.dart';
 import 'screens/admin/question_editor_screen.dart';
 import 'screens/admin/manual_grading_screen.dart';
 import 'screens/admin/exam_list_screen.dart'; 
+import 'screens/admin/leaderboard_screen.dart'; // FIX: Added this import
 
 // Student Screens
 import 'screens/student/token_landing_screen.dart';
@@ -19,6 +20,7 @@ import 'screens/student/candidate_info_screen.dart';
 import 'screens/student/exam_instructions_screen.dart';
 import 'screens/student/submission_screen.dart';
 import 'screens/student/result_screen.dart';
+import 'screens/student/result_lookup_screen.dart'; 
 
 import 'providers/auth_providers.dart';
 import 'providers/role_provider.dart';
@@ -94,24 +96,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin/token-manager', builder: (_, __) => const TokenManagerScreen()),
       GoRoute(path: '/admin/exam-list', builder: (_, __) => const ExamListScreen()),
       GoRoute(path: '/admin/manual-grading', builder: (_, __) => const ManualGradingScreen()),
+      GoRoute(path: '/admin/leaderboard', builder: (_, __) => const AdminLeaderboardScreen()), // FIX: Standardized location
       GoRoute(
           path: '/admin/exam-builder/questions/:examId',
           builder: (ctx, st) => QuestionEditorScreen(examId: st.pathParameters['examId']!)),
 
       // --- STUDENT ROUTES ---
       
-      // Landing from a direct link or token
       GoRoute(
           path: '/e/:token',
           builder: (ctx, st) => TokenLandingScreen(token: st.pathParameters['token'])),
       
-      // Instructions Page
       GoRoute(
           path: '/instructions/:examId',
           builder: (ctx, st) => ExamInstructionsScreen(examId: st.pathParameters['examId']!)),
 
-      // Unified Candidate Registration
-      // Supports context.go('/candidate/ID') AND context.go('/candidate', extra: {'examId': ID})
       GoRoute(
         path: '/candidate/:examId', 
         builder: (ctx, st) {
@@ -121,7 +120,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       
-      // Fallback for candidate route without path param
       GoRoute(
         path: '/candidate',
         builder: (ctx, st) {
@@ -130,13 +128,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-      // Live Exam & Results
       GoRoute(
           path: '/exam/:attemptId',
           builder: (ctx, st) => ExamRoomScreen(attemptId: st.pathParameters['attemptId']!)),
       GoRoute(
           path: '/submitted/:attemptId',
           builder: (ctx, st) => SubmissionScreen(attemptId: st.pathParameters['attemptId']!)),
+      
+      GoRoute(
+          path: '/results',
+          builder: (ctx, st) => const ResultLookupScreen()),
+
       GoRoute(
           path: '/result/:attemptId',
           builder: (ctx, st) => ResultScreen(attemptId: st.pathParameters['attemptId']!)),

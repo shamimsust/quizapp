@@ -155,6 +155,22 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
               ),
 
             const Spacer(),
+
+            // --- RESULT LOOKUP SECTION ---
+            Center(
+              child: Column(
+                children: [
+                  const Text("Looking for your results?", 
+                    style: TextStyle(color: Colors.black45, fontSize: 13, fontWeight: FontWeight.w500)),
+                  TextButton(
+                    onPressed: () => context.push('/results'),
+                    child: Text("Access Result Portal", 
+                      style: TextStyle(color: _primaryBlue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             
             // ACTION BUTTON
             SizedBox(

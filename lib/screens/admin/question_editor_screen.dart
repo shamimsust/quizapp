@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-// Ensure these imports match your project structure
-// import '../../services/exam_service.dart'; 
 import '../../widgets/latex_text.dart';
 
 class QuestionEditorScreen extends StatefulWidget {
@@ -22,7 +20,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   bool _isSaving = false;
   String? _editingQuestionId;
 
-  // MCQ Options State - Using Controllers to prevent focus loss on rebuild
+  // MCQ Options State
   final Map<String, TextEditingController> _optionControllers = {
     'A': TextEditingController(),
     'B': TextEditingController(),
@@ -202,6 +200,11 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
+        // Added back button navigation
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Text(_editingQuestionId == null ? 'QUESTION BUILDER' : 'EDITING QUESTION', 
           style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 14)),
         backgroundColor: brandBlue,
@@ -212,6 +215,14 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             IconButton(icon: const Icon(Icons.close_rounded), onPressed: _clearForm, tooltip: 'Cancel Edit'),
           const SizedBox(width: 8),
         ],
+      ),
+      // Floating button to finalize and return to dashboard
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.pop(context),
+        backgroundColor: Colors.green.shade700,
+        elevation: 4,
+        icon: const Icon(Icons.check_circle_outline, color: Colors.white),
+        label: const Text("FINISH & EXIT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
         controller: _scrollController,
@@ -224,7 +235,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               child: Divider(color: Color(0xFFE2E8F0)),
             ),
             _buildExistingQuestionsList(brandBlue),
-            const SizedBox(height: 100),
+            const SizedBox(height: 120), // Added extra spacing for the FAB
           ],
         ),
       ),
@@ -245,7 +256,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           _buildLabel('QUESTION SETTINGS'),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: _type,
+            value: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() { _type = v!; _correctOptions.clear(); }),
             items: const [
@@ -348,7 +359,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC), 
         borderRadius: BorderRadius.circular(12), 
-        border: Border.all(color: brandBlue.withValues(alpha: 0.1)) // Corrected to withValues
+        border: Border.all(color: brandBlue.withValues(alpha: 0.1))
       ),
       child: _stemController.text.isEmpty 
         ? const Text(
@@ -356,7 +367,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             style: TextStyle(
               color: Color(0xFF94A3B8), 
               fontSize: 13, 
-              fontStyle: FontStyle.italic // Corrected from italic: true
+              fontStyle: FontStyle.italic
             )
           ) 
         : LatexText(_stemController.text, size: 16),

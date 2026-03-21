@@ -11,7 +11,7 @@ class AdminDashboardScreen extends StatelessWidget {
     const Color primaryBlue = Color(0xFF2264D7);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC), // Matching student screen background
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('ADMIN CONSOLE', 
           style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 1.5, fontSize: 14)),
@@ -66,6 +66,13 @@ class AdminDashboardScreen extends StatelessWidget {
             icon: Icons.fact_check_rounded,
             onTap: () => context.push('/admin/manual-grading'), 
           ),
+          _DashboardTile(
+            title: 'Global Leaderboard',
+            subtitle: 'View rankings and candidate performance',
+            icon: Icons.emoji_events_rounded,
+            color: const Color(0xFFF59E0B),
+            onTap: () => context.push('/admin/leaderboard'), 
+          ),
 
           const SizedBox(height: 40),
           const Divider(height: 1, color: Color(0xFFE2E8F0)),
@@ -97,24 +104,37 @@ class AdminDashboardScreen extends StatelessWidget {
   }
 
   Widget _buildStatCards() {
-    return const Row(
+    return const Column( // Added 'const' here
       children: [
-        Expanded(
-          child: _StatCard(
-            label: 'Active Tokens', 
-            path: 'examTokens', 
-            icon: Icons.vpn_key_rounded, 
-            color: Color(0xFFF59E0B)
-          )
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                label: 'Active Tokens', 
+                path: 'examTokens', 
+                icon: Icons.vpn_key_rounded, 
+                color: Color(0xFFF59E0B)
+              )
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: _StatCard(
+                label: 'Active Takers', 
+                path: 'attempts', 
+                icon: Icons.person_search_rounded, 
+                color: Color(0xFF2264D7),
+                filterActive: true,
+              )
+            ),
+          ],
         ),
-        SizedBox(width: 16),
-        Expanded(
-          child: _StatCard(
-            label: 'Total Attempts', 
-            path: 'attempts', 
-            icon: Icons.analytics_rounded, 
-            color: Color(0xFF10B981)
-          )
+        SizedBox(height: 16),
+        _StatCard(
+          label: 'Total Completed Attempts', 
+          path: 'attempts', 
+          icon: Icons.analytics_rounded, 
+          color: Color(0xFF10B981),
+          fullWidth: true,
         ),
       ],
     );
@@ -148,8 +168,17 @@ class _StatCard extends StatelessWidget {
   final String path;
   final IconData icon;
   final Color color;
+  final bool filterActive;
+  final bool fullWidth;
 
-  const _StatCard({required this.label, required this.path, required this.icon, required this.color});
+  const _StatCard({
+    required this.label, 
+    required this.path, 
+    required this.icon, 
+    required this.color,
+    this.filterActive = false,
+    this.fullWidth = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -159,10 +188,17 @@ class _StatCard extends StatelessWidget {
         int count = 0;
         if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
           final data = snapshot.data!.snapshot.value;
-          if (data is Map) count = data.length;
+          if (data is Map) {
+            if (filterActive) {
+              count = data.values.where((v) => v is Map && v['status'] == 'started').length;
+            } else {
+              count = data.length;
+            }
+          }
         }
 
         return Container(
+          width: fullWidth ? double.infinity : null,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -175,10 +211,21 @@ class _StatCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: color.withAlpha((255 * 0.1).round()), borderRadius: BorderRadius.circular(8)),
-                child: Icon(icon, color: color, size: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: color.withAlpha((255 * 0.1).round()), borderRadius: BorderRadius.circular(8)),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  if (filterActive && count > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(20)),
+                      child: const Text("LIVE", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                    )
+                ],
               ),
               const SizedBox(height: 16),
               Text(count.toString(), 

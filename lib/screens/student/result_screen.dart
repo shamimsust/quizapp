@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
+import '../../widgets/latex_text.dart';
 
 class ResultScreen extends ConsumerStatefulWidget {
   final String attemptId;
@@ -13,6 +14,7 @@ class ResultScreen extends ConsumerStatefulWidget {
 
 class _ResultScreenState extends ConsumerState<ResultScreen> {
   Key _refreshKey = UniqueKey();
+  bool _showDetails = false;
 
   @override
   Widget build(BuildContext context) {
@@ -21,97 +23,72 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('EXAM RESULT', 
-          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 16)),
+        title: const Text('EXAM PERFORMANCE', 
+          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 14)),
         backgroundColor: brandBlue,
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
-        automaticallyImplyLeading: false, 
+        automaticallyImplyLeading: true, // Set to true so students can go back to lookup
       ),
       body: RefreshIndicator(
         color: brandBlue,
-        onRefresh: () async {
-          setState(() { _refreshKey = UniqueKey(); });
-        },
+        onRefresh: () async { setState(() { _refreshKey = UniqueKey(); }); },
         child: FutureBuilder(
           key: _refreshKey,
-          future: FirebaseDatabase.instance.ref('attempts/${widget.attemptId}').get(),
+          future: _fetchFullResultData(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: brandBlue));
             }
 
-            if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
-              return _buildErrorState();
-            }
+            if (snapshot.hasError || !snapshot.hasData) return _buildErrorState();
 
-            final data = Map<String, dynamic>.from(snapshot.data!.value as Map);
+            final results = snapshot.data as Map<String, dynamic>;
+            final attempt = results['attempt'];
+            final questions = results['questions'] as Map;
+            final answers = results['answers'] as Map;
+
+            // STATUS LOGIC: Only 'completed' shows the final grade
+            final String status = attempt['status'] ?? 'submitted';
+            final bool isPending = status != 'completed'; 
             
-            // LOGIC FIX: Check both status and if the exam requires manual grading
-            final String status = data['status'] ?? 'submitted';
-            final bool isPending = status == 'submitted' || status == 'pending_review';
-            
-            final num score = data['score'] ?? 0;
-            final num total = data['totalPossible'] ?? 0;
-            final double percentage = (total > 0) ? (score / total) * 100 : 0;
+            // BP Logic: Prioritize the Rank/Score assigned by admin
+            final dynamic score = attempt['score'] ?? 0;
+            final num total = attempt['totalPossible'] ?? 0;
 
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+                padding: const EdgeInsets.all(24.0),
                 child: Column(
                   children: [
                     _buildIllustration(isPending, brandBlue),
+                    const SizedBox(height: 24),
+                    _buildScoreCard(score, total, isPending, brandBlue),
+                    
                     const SizedBox(height: 32),
                     
-                    Text(
-                      isPending ? 'Submission Received!' : 'Quiz Completed!',
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, fontFamily: 'Inter', color: Color(0xFF0F172A)),
-                    ),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        isPending 
-                          ? 'Your responses are safely stored. A teacher will review your written answers shortly.' 
-                          : 'Great job! Your final results have been calculated and verified.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 15, color: Color(0xFF64748B), height: 1.5, fontFamily: 'Inter'),
-                      ),
+                    _buildActionButton(
+                      label: _showDetails ? 'HIDE BREAKDOWN' : 'VIEW DETAILED REVIEW',
+                      icon: _showDetails ? Icons.expand_less : Icons.analytics_outlined,
+                      color: _showDetails ? Colors.blueGrey : brandBlue,
+                      onPressed: () => setState(() => _showDetails = !_showDetails),
                     ),
 
-                    const SizedBox(height: 48),
-                    _buildScoreCard(score, total, percentage, isPending, brandBlue),
-                    const SizedBox(height: 48),
-                    
-                    SizedBox(
-                      width: double.infinity,
-                      height: 60,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: brandBlue,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 0,
-                        ),
-                        onPressed: () => context.go('/'), 
-                        child: const Text('RETURN TO HOME', 
-                          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 1.1, fontFamily: 'Inter')),
-                      ),
-                    ),
-                    
-                    if (isPending) ...[
+                    if (_showDetails) ...[
                       const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.refresh_rounded, size: 14, color: Colors.blueGrey),
-                          const SizedBox(width: 8),
-                          Text("Pull down to check for updates", 
-                            style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade400, fontFamily: 'Inter', fontWeight: FontWeight.w500)),
-                        ],
-                      ),
+                      _buildDetailedList(questions, answers, brandBlue),
                     ],
+
+                    const SizedBox(height: 16),
+                    _buildActionButton(
+                      label: 'RETURN TO DASHBOARD',
+                      icon: Icons.home_filled,
+                      color: const Color(0xFF1E293B),
+                      onPressed: () => context.go('/'),
+                    ),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -122,76 +99,152 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     );
   }
 
-  Widget _buildIllustration(bool isPending, Color brandBlue) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 140,
-          height: 140,
-          decoration: BoxDecoration(
-            color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withAlpha(20),
-            shape: BoxShape.circle,
+  Future<Map<String, dynamic>> _fetchFullResultData() async {
+    final attemptSnap = await FirebaseDatabase.instance.ref('attempts/${widget.attemptId}').get();
+    if (!attemptSnap.exists) throw Exception("Attempt not found");
+    
+    final attemptData = Map<String, dynamic>.from(attemptSnap.value as Map);
+    final String examId = attemptData['examId'] ?? '';
+
+    final results = await Future.wait([
+      FirebaseDatabase.instance.ref('exams/$examId/questions').get(),
+      FirebaseDatabase.instance.ref('attemptAnswers/${widget.attemptId}').get(),
+    ]);
+
+    return {
+      'attempt': attemptData,
+      'questions': (results[0].value as Map?) ?? {},
+      'answers': (results[1].value as Map?) ?? {},
+    };
+  }
+
+  Widget _buildScoreCard(dynamic score, num total, bool isPending, Color brandBlue) {
+    // If it's a number, calculate percentage. If it's a string (1st, 2nd), progress is 100%
+    final double percent = (score is num && total > 0) ? (score / total) : (isPending ? 0.0 : 1.0);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: Column(
+        children: [
+          Text(isPending ? 'PRELIMINARY STATUS' : 'FINAL GRADE / RANK',
+              style: const TextStyle(fontSize: 11, letterSpacing: 1.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
+          const SizedBox(height: 16),
+          Text(isPending ? "PENDING REVIEW" : "$score", 
+            style: TextStyle(
+              fontSize: score.toString().length > 5 ? 32 : 48, 
+              fontWeight: FontWeight.w900, 
+              color: isPending ? Colors.orange : brandBlue
+            )
           ),
-        ),
-        Icon(
-          isPending ? Icons.auto_awesome_outlined : Icons.emoji_events_rounded, 
-          size: 70, 
-          color: isPending ? Colors.orange.shade600 : brandBlue
-        ),
+          if (!isPending && score is num) 
+            Text("out of $total total points", style: const TextStyle(color: Color(0xFFCBD5E1), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 24),
+          LinearProgressIndicator(
+            value: isPending ? null : percent,
+            backgroundColor: const Color(0xFFF1F5F9),
+            color: isPending ? Colors.orange : brandBlue,
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIllustration(bool isPending, Color brandBlue) {
+    return Container(
+      width: 100, height: 100,
+      decoration: BoxDecoration(
+        color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withOpacity(0.1), 
+        shape: BoxShape.circle
+      ),
+      child: Icon(
+        isPending ? Icons.hourglass_top_rounded : Icons.workspace_premium_rounded, 
+        size: 48, 
+        color: isPending ? Colors.orange : brandBlue
+      ),
+    );
+  }
+
+  Widget _buildDetailedList(Map questions, Map answers, Color brandBlue) {
+    if (questions.isEmpty) return const Center(child: Text("No question data available."));
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("QUESTION BREAKDOWN", 
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF64748B), letterSpacing: 1.2)),
+        const SizedBox(height: 16),
+        ...questions.entries.map((entry) {
+          final qId = entry.key;
+          final qData = Map<String, dynamic>.from(entry.value as Map);
+          final studentAns = Map<String, dynamic>.from((answers[qId] ?? {}) as Map);
+          
+          final bool isMCQ = qData['type']?.toString().contains('mcq') ?? false;
+          final String correctStr = (qData['correctOptions'] as List?)?.join(', ') ?? '';
+          final String studentStr = isMCQ 
+              ? (studentAns['selected'] as List?)?.join(', ') ?? 'No Answer'
+              : studentAns['text'] ?? 'No Answer';
+          
+          final bool isCorrect = isMCQ && correctStr == studentStr;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LatexText(qData['stem'] ?? '', size: 14),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                _buildResponseRow("YOUR ANSWER", studentStr, isMCQ ? (isCorrect ? Colors.green : Colors.red) : brandBlue),
+                if (isMCQ && !isCorrect)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: _buildResponseRow("CORRECT", correctStr, Colors.green),
+                  ),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
 
-  Widget _buildScoreCard(num score, num total, double percent, bool isPending, Color brandBlue) {
-    return Container(
+  Widget _buildResponseRow(String label, String value, Color color) {
+    return Row(
+      children: [
+        Text("$label: ", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF94A3B8))),
+        Expanded(child: LatexText(value, size: 13, color: color)),
+        if (color == Colors.green) const Icon(Icons.check_circle, size: 16, color: Colors.green),
+        if (color == Colors.red) const Icon(Icons.cancel, size: 16, color: Colors.red),
+      ],
+    );
+  }
+
+  Widget _buildActionButton({required String label, required IconData icon, required Color color, required VoidCallback onPressed}) {
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withAlpha(8), blurRadius: 30, offset: const Offset(0, 15))
-        ],
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Column(
-        children: [
-          Text(
-            isPending ? 'PRELIMINARY SCORE' : 'FINAL SCORE',
-            style: const TextStyle(fontSize: 12, letterSpacing: 2.0, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900, fontFamily: 'Inter'),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text('$score', 
-                style: TextStyle(fontSize: 64, fontWeight: FontWeight.w900, color: isPending ? Colors.orange.shade800 : brandBlue, fontFamily: 'Inter')),
-              Text(' / $total', 
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFCBD5E1), fontFamily: 'Inter')),
-            ],
-          ),
-          const SizedBox(height: 32),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withAlpha(20),
-              borderRadius: BorderRadius.circular(100),
-              border: Border.all(color: isPending ? Colors.orange.shade100 : brandBlue.withAlpha(26)),
-            ),
-            child: Text(
-              isPending ? "GRADING IN PROGRESS" : "${percent.toStringAsFixed(1)}% ACCURACY",
-              style: TextStyle(
-                fontSize: 13, 
-                fontWeight: FontWeight.w800, 
-                color: isPending ? Colors.orange.shade900 : brandBlue,
-                fontFamily: 'Inter'
-              ),
-            ),
-          ),
-        ],
+      height: 56,
+      child: ElevatedButton.icon(
+        icon: Icon(icon, color: Colors.white, size: 20),
+        label: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+        ),
+        onPressed: onPressed,
       ),
     );
   }
@@ -201,17 +254,10 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.cloud_off_rounded, size: 60, color: Colors.red.shade300),
-          const SizedBox(height: 20),
-          const Text('Could not sync results.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: 8),
-          const Text('Check your connection and try again.', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 24),
-          TextButton.icon(
-            onPressed: () => context.go('/'), 
-            icon: const Icon(Icons.home_rounded),
-            label: const Text('Back to Home'),
-          ),
+          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const SizedBox(height: 16),
+          const Text("Failed to load results", style: TextStyle(fontWeight: FontWeight.bold)),
+          TextButton(onPressed: () => context.go('/'), child: const Text("Go Home")),
         ],
       ),
     );
