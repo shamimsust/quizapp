@@ -50,7 +50,6 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
             
             // LOGIC FIX: Check both status and if the exam requires manual grading
             final String status = data['status'] ?? 'submitted';
-            final bool isManualRequired = data['isManualGrading'] ?? false;
             final bool isPending = status == 'submitted' || status == 'pending_review';
             
             final num score = data['score'] ?? 0;
