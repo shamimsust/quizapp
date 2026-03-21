@@ -161,15 +161,15 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: isActive ? color : color.withOpacity(0.05),
+            color: isActive ? color : color.withValues(alpha:0.05),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isActive ? color : color.withOpacity(0.1), width: 2),
-            boxShadow: isActive ? [BoxShadow(color: color.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
+            border: Border.all(color: isActive ? color : color.withValues(alpha:0.1), width: 2),
+            boxShadow: isActive ? [BoxShadow(color: color.withValues(alpha:0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
           ),
           child: Column(
             children: [
               Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isActive ? Colors.white : color)),
-              Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isActive ? Colors.white70 : color.withOpacity(0.6), letterSpacing: 1)),
+              Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isActive ? Colors.white70 : color.withValues(alpha:0.6), letterSpacing: 1)),
             ],
           ),
         ),
@@ -255,11 +255,11 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     Widget trailingIcon = const Icon(Icons.radio_button_unchecked_rounded, size: 16, color: Color(0xFFCBD5E1));
 
                     if (isThisCorrect) {
-                      bgColor = Colors.green.withOpacity(0.08);
+                      bgColor = Colors.green.withValues(alpha:0.08);
                       borderColor = Colors.green.shade200;
                       trailingIcon = const Icon(Icons.check_circle_rounded, size: 18, color: Colors.green);
                     } else if (isThisSelected) {
-                      bgColor = Colors.red.withOpacity(0.08);
+                      bgColor = Colors.red.withValues(alpha:0.08);
                       borderColor = Colors.red.shade200;
                       trailingIcon = const Icon(Icons.cancel_rounded, size: 18, color: Colors.red);
                     }
@@ -323,7 +323,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.04), blurRadius: 20, offset: const Offset(0, 10))],
       ),
       child: Column(
         children: [
@@ -345,7 +345,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   Widget _buildIllustration(bool isPending, Color brandBlue) {
     return Container(
       width: 100, height: 100,
-      decoration: BoxDecoration(color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withOpacity(0.1), shape: BoxShape.circle),
+      decoration: BoxDecoration(color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withValues(alpha:0.1), shape: BoxShape.circle),
       child: Icon(isPending ? Icons.hourglass_top_rounded : Icons.workspace_premium_rounded, size: 48, color: isPending ? Colors.orange : brandBlue),
     );
   }

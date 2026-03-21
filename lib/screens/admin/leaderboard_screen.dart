@@ -195,10 +195,10 @@ class _AdminLeaderboardScreenState extends State<AdminLeaderboardScreen> {
               }).toList();
 
               filteredEntries.sort((a, b) {
-                double scoreA = double.tryParse(a.score) ?? 0;
-                double scoreB = double.tryParse(b.score) ?? 0;
-                return scoreB.compareTo(scoreA);
-              });
+                  final scoreA = double.tryParse(a.score) ?? 0;
+                 final scoreB = double.tryParse(b.score) ?? 0;
+                 return scoreB.compareTo(scoreA);
+                });
 
               return ListView.builder(
                 padding: const EdgeInsets.all(20),

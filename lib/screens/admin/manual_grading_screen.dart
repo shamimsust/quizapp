@@ -65,7 +65,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
               hintStyle: const TextStyle(color: Colors.white70),
               prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.15),
+              fillColor: Colors.white.withValues(alpha:0.15),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               contentPadding: EdgeInsets.zero,
             ),
@@ -187,7 +187,8 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
       _db.child('exams/$examId/questions').get(),
       _db.child('attemptAnswers/$attemptId').get(),
     ]);
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    Navigator.pop(context);
 
     final Map originalQuestions = (results[0].value as Map?) ?? {};
     final Map studentAnswers = (results[1].value as Map?) ?? {};
@@ -285,8 +286,8 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold),
                 decoration: InputDecoration(
                   contentPadding: EdgeInsets.zero,
-                  filled: true, fillColor: _primaryBlue.withOpacity(0.05),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _primaryBlue.withOpacity(0.2))),
+                  filled: true, fillColor: _primaryBlue.withValues(alpha:0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _primaryBlue.withValues(alpha:0.2))),
                 ),
               ),
             ),
@@ -318,7 +319,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
 
     // 1. Prepare updates for individual questions in 'attemptAnswers'
     scoreControllers.forEach((qId, controller) {
-      double qScore = double.tryParse(controller.text) ?? 0;
+      final double qScore = double.tryParse(controller.text) ?? 0;
       totalCalculatedScore += qScore;
       updates['attemptAnswers/$attemptId/$qId/manualPoints'] = qScore;
     });

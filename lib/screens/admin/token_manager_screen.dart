@@ -65,7 +65,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                       final examsMap = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
                       
                       return DropdownButtonFormField<String>(
-                        value: _selectedExamId,
+                        initialValue: _selectedExamId,
                         isExpanded: true,
                         decoration: InputDecoration(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -220,7 +220,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: color.withValues(alpha:0.1), borderRadius: BorderRadius.circular(4)),
       child: Text(text, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
     );
   }
