@@ -11,7 +11,7 @@ import 'screens/admin/token_manager_screen.dart';
 import 'screens/admin/question_editor_screen.dart';
 import 'screens/admin/manual_grading_screen.dart';
 import 'screens/admin/exam_list_screen.dart'; 
-import 'screens/admin/leaderboard_screen.dart'; // FIX: Added this import
+import 'screens/admin/leaderboard_screen.dart'; 
 
 // Student Screens
 import 'screens/student/token_landing_screen.dart';
@@ -52,19 +52,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/'; 
       }
 
-      // 2. Admin Access Control
+      // 2. Admin Access Control (If user is ALREADY verified as admin)
       if (user != null && role == 'admin') {
         if (onRoot || onAdminLogin) return '/admin';
         return null; 
       }
 
-      // 3. Security Redirection
+      // 3. Security Redirection & Path Guarding
       if (goingAdmin) {
+        // ALLOW everyone to see the sign-in page regardless of session
+        if (onAdminLogin) return null;
+
+        // If trying to access admin screens without a session
         if (user == null) {
-          return onAdminLogin ? null : '/admin/signin';
+          return '/admin/signin';
         }
-        if (role == null || role == 'unknown') return null; 
-        if (role == 'student') return '/';
+
+        // If logged in but NOT an admin (e.g. Anonymous Student session)
+        // This ensures the "Admin Login" button actually navigates
+        if (role != 'admin') {
+          return '/admin/signin';
+        }
       }
 
       return null;
@@ -96,13 +104,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin/token-manager', builder: (_, __) => const TokenManagerScreen()),
       GoRoute(path: '/admin/exam-list', builder: (_, __) => const ExamListScreen()),
       GoRoute(path: '/admin/manual-grading', builder: (_, __) => const ManualGradingScreen()),
-      GoRoute(path: '/admin/leaderboard', builder: (_, __) => const AdminLeaderboardScreen()), // FIX: Standardized location
+      GoRoute(path: '/admin/leaderboard', builder: (_, __) => const AdminLeaderboardScreen()), 
       GoRoute(
           path: '/admin/exam-builder/questions/:examId',
           builder: (ctx, st) => QuestionEditorScreen(examId: st.pathParameters['examId']!)),
 
       // --- STUDENT ROUTES ---
-      
       GoRoute(
           path: '/e/:token',
           builder: (ctx, st) => TokenLandingScreen(token: st.pathParameters['token'])),

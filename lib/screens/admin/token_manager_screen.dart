@@ -13,6 +13,8 @@ class TokenManagerScreen extends StatefulWidget {
 class _TokenManagerScreenState extends State<TokenManagerScreen> {
   final _tokenService = TokenService();
   final _searchController = TextEditingController();
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  
   String? _selectedExamId;
   bool _isGenerating = false;
   String _searchQuery = "";
@@ -27,68 +29,89 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Token Manager', style: TextStyle(fontFamily: 'Inter')),
+        title: const Text('Token Manager', 
+          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 18)),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: Column(
         children: [
           // --- GENERATOR SECTION ---
           Padding(
             padding: const EdgeInsets.all(20),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.grey[200]!),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Create New Entry Token', 
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    StreamBuilder<Map<String, String>>(
-                      stream: _tokenService.watchAllExams(),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) return const LinearProgressIndicator();
-                        final exams = snapshot.data!;
-                        return DropdownButtonFormField<String>(
-                          initialValue: _selectedExamId,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            contentPadding: EdgeInsets.symmetric(horizontal: 12),
-                            border: OutlineInputBorder(),
-                            hintText: "Select an Exam",
-                          ),
-                          items: exams.entries.map((e) => DropdownMenuItem(
-                            value: e.key,
-                            child: Text(e.value, overflow: TextOverflow.ellipsis),
-                          )).toList(),
-                          onChanged: (val) => setState(() => _selectedExamId = val),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('CREATE ENTRY TOKEN', 
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF64748B), letterSpacing: 1.1)),
+                  const SizedBox(height: 16),
+                  StreamBuilder<DatabaseEvent>(
+                    stream: _db.child('exams').onValue,
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+                        return const LinearProgressIndicator();
+                      }
+                      
+                      final examsMap = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+                      
+                      return DropdownButtonFormField<String>(
+                        value: _selectedExamId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                          filled: true,
+                          fillColor: const Color(0xFFF1F5F9),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          hintText: "Select an Exam",
                         ),
-                        onPressed: (_isGenerating || _selectedExamId == null) ? null : _handleGenerate,
-                        child: _isGenerating 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                          : const Text('Generate Token', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        items: examsMap.entries.map((e) {
+                          final data = Map<String, dynamic>.from(e.value as Map);
+                          final bool isDraft = data['status'] != 'published';
+                          return DropdownMenuItem(
+                            value: e.key as String,
+                            child: Row(
+                              children: [
+                                Expanded(child: Text(data['title'] ?? 'Untitled', overflow: TextOverflow.ellipsis)),
+                                if (isDraft)
+                                  _buildSmallBadge('DRAFT', Colors.orange)
+                                else
+                                  _buildSmallBadge('LIVE', Colors.green),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedExamId = val),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
                       ),
+                      onPressed: (_isGenerating || _selectedExamId == null) ? null : _handleGenerate,
+                      child: _isGenerating 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                        : const Text('GENERATE TOKEN', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1)),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -101,34 +124,38 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
               onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
               decoration: InputDecoration(
                 hintText: "Search tokens or Exam IDs...",
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty 
-                    ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = "");
-                      }) 
-                    : null,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                hintStyle: const TextStyle(fontSize: 14),
+                prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B)),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: EdgeInsets.zero,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
               ),
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
           // --- LIST SECTION ---
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
-              stream: FirebaseDatabase.instance.ref('examTokens').onValue,
+              stream: _db.child('examTokens').onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                 if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                  return const Center(child: Text("No tokens found."));
+                  return _buildEmptyState();
                 }
 
                 final data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
                 var tokenEntries = data.entries.toList();
 
-                // Apply Search Filter
                 if (_searchQuery.isNotEmpty) {
                   tokenEntries = tokenEntries.where((e) {
                     final code = e.key.toString().toLowerCase();
@@ -139,34 +166,40 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
 
                 return ListView.builder(
                   itemCount: tokenEntries.length,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   itemBuilder: (context, index) {
-                    final code = tokenEntries[index].key;
+                    final code = tokenEntries[index].key.toString();
                     final tData = Map<dynamic, dynamic>.from(tokenEntries[index].value as Map);
-                    final examId = tData['examId'] ?? 'N/A';
+                    final String examId = tData['examId'] ?? 'N/A';
 
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
+                      margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey[200]!),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: ListTile(
-                        title: Text(code, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                        subtitle: Text("Target Exam: $examId", style: const TextStyle(fontSize: 12)),
+                        title: Text(code, style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Color(0xFF0F172A))),
+                        subtitle: Row(
+                          children: [
+                            const Icon(Icons.link_rounded, size: 14, color: Color(0xFF64748B)),
+                            const SizedBox(width: 4),
+                            Expanded(child: Text(examId, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.copy_all, size: 20),
+                              icon: const Icon(Icons.copy_rounded, size: 20, color: Color(0xFF2264D7)),
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: code));
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied!')));
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Token copied!')));
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                               onPressed: () => _deleteToken(code),
                             ),
                           ],
@@ -178,6 +211,28 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallBadge(String text, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+      child: Text(text, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.key_off_rounded, size: 48, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text("No active tokens found", style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -201,15 +256,19 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Delete Token?"),
-        content: Text("This will revoke access for code: $code"),
+        content: Text("Access code '$code' will be permanently revoked."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Confirm Delete", style: TextStyle(color: Colors.red))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, elevation: 0),
+            onPressed: () => Navigator.pop(ctx, true), 
+            child: const Text("Delete", style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );
     if (confirmed == true) {
-      await FirebaseDatabase.instance.ref('examTokens').child(code).remove();
+      await _db.child('examTokens').child(code).remove();
     }
   }
 }

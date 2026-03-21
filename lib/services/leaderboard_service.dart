@@ -16,7 +16,7 @@ class LeaderboardService {
       final Map<dynamic, dynamic>? data = event.snapshot.value as Map?;
       if (data == null) return [];
 
-      List<LeaderboardEntry> entries = [];
+      final List<LeaderboardEntry> entries = [];
       data.forEach((key, value) {
         final attempt = Map<String, dynamic>.from(value);
         // Only include completed/graded exams

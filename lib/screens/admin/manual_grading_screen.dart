@@ -28,7 +28,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isViewingStudents = _selectedExamId != null;
+    final bool isViewingStudents = _selectedExamId != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFEFF2F6),
@@ -42,17 +42,14 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
         leading: isViewingStudents 
           ? IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded), 
-              onPressed: () {
-                setState(() => _selectedExamId = null);
-                _examSearchQuery.value = '';
-                _examSearchController.clear();
-              })
+              onPressed: () => setState(() => _selectedExamId = null))
           : null,
       ),
       body: isViewingStudents ? _buildStudentList() : _buildExamSelectionUI(),
     );
   }
 
+  // ... [Keep _buildExamSelectionUI and _buildExamList exactly as they were] ...
   Widget _buildExamSelectionUI() {
     return Column(
       children: [
@@ -64,13 +61,13 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
             onChanged: (val) => _examSearchQuery.value = val.toLowerCase(),
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search exams by title...',
+              hintText: 'Search exams...',
               hintStyle: const TextStyle(color: Colors.white70),
               prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
               filled: true,
               fillColor: Colors.white.withOpacity(0.15),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              contentPadding: EdgeInsets.zero,
             ),
           ),
         ),
@@ -89,49 +86,32 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
       stream: _db.child('attempts').onValue,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-          return const Center(child: Text("No exam submissions found."));
+          return const Center(child: Text("No submissions found."));
         }
-
-        final Map<dynamic, dynamic> allAttempts = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
-        Map<String, Map<String, dynamic>> examGroups = {};
-
+        final Map allAttempts = Map.from(snapshot.data!.snapshot.value as Map);
+        final Map<String, Map<String, dynamic>> examGroups = {};
         allAttempts.forEach((id, data) {
           final attempt = Map<String, dynamic>.from(data as Map);
           final String eId = attempt['examId'] ?? 'unknown';
-          final String eTitle = attempt['examTitle'] ?? 'Untitled Exam';
-
+          final String eTitle = attempt['examTitle'] ?? 'Untitled';
           if (query.isEmpty || eTitle.toLowerCase().contains(query)) {
-            if (!examGroups.containsKey(eId)) {
-              examGroups[eId] = {'title': eTitle, 'pending': 0, 'completed': 0};
-            }
-            if (attempt['status'] == 'submitted') {
-              examGroups[eId]!['pending']++;
-            } else if (attempt['status'] == 'completed') {
-              examGroups[eId]!['completed']++;
-            }
+            if (!examGroups.containsKey(eId)) examGroups[eId] = {'title': eTitle, 'pending': 0, 'completed': 0};
+            attempt['status'] == 'submitted' ? examGroups[eId]!['pending']++ : examGroups[eId]!['completed']++;
           }
         });
-
-        if (examGroups.isEmpty) return const Center(child: Text("No matching exams."));
         final examList = examGroups.entries.toList();
-
         return ListView.builder(
           padding: const EdgeInsets.all(20),
           itemCount: examList.length,
           itemBuilder: (context, index) {
             final stats = examList[index].value;
             return Card(
-              elevation: 0,
-              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 0, margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(side: const BorderSide(color: Color(0xFFE2E8F0)), borderRadius: BorderRadius.circular(16)),
               child: ListTile(
-                onTap: () => setState(() {
-                  _selectedExamId = examList[index].key;
-                  _selectedExamTitle = stats['title'];
-                }),
+                onTap: () => setState(() { _selectedExamId = examList[index].key; _selectedExamTitle = stats['title']; }),
                 title: Text(stats['title'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text("${stats['completed']} Graded • ${stats['pending']} Pending", 
-                  style: TextStyle(color: stats['pending'] > 0 ? Colors.orange.shade800 : Colors.grey)),
+                subtitle: Text("${stats['completed']} Graded • ${stats['pending']} Pending"),
                 trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
               ),
             );
@@ -145,11 +125,8 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     return StreamBuilder(
       stream: _db.child('attempts').orderByChild('examId').equalTo(_selectedExamId).onValue,
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-          return const Center(child: Text("No student scripts found for this exam."));
-        }
-
-        final Map<dynamic, dynamic> attempts = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+        if (!snapshot.hasData || snapshot.data?.snapshot.value == null) return const Center(child: Text("No scripts found."));
+        final Map attempts = Map.from(snapshot.data!.snapshot.value as Map);
         final list = attempts.entries.toList();
         final pending = list.where((e) => (e.value as Map)['status'] == 'submitted').toList();
         final completed = list.where((e) => (e.value as Map)['status'] == 'completed').toList();
@@ -160,13 +137,13 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
             if (pending.isNotEmpty) ...[
               const Text("SCRIPTS TO GRADE", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF64748B), letterSpacing: 1.2)),
               const SizedBox(height: 12),
-              ...pending.map((e) => _buildStudentCard(e.key.toString(), Map<String, dynamic>.from(e.value as Map), false)),
+              ...pending.map((e) => _buildStudentCard(e.key.toString(), Map.from(e.value as Map), false)),
             ],
             const SizedBox(height: 24),
             if (completed.isNotEmpty) ...[
               const Text("FINALIZED RESULTS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF64748B), letterSpacing: 1.2)),
               const SizedBox(height: 12),
-              ...completed.map((e) => _buildStudentCard(e.key.toString(), Map<String, dynamic>.from(e.value as Map), true)),
+              ...completed.map((e) => _buildStudentCard(e.key.toString(), Map.from(e.value as Map), true)),
             ],
           ],
         );
@@ -182,23 +159,13 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(attempt['candidate']?['name'] ?? 'Student', style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text(isDone ? "Final Score: ${attempt['totalPoints']}" : "Ready for evaluation", 
-                  style: TextStyle(fontSize: 12, color: isDone ? _primaryBlue : const Color(0xFF64748B))),
-              ],
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(attempt['candidate']?['name'] ?? 'Student', style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(isDone ? "Final Score: ${attempt['score']}" : "Ready for evaluation", style: TextStyle(fontSize: 12, color: isDone ? _primaryBlue : const Color(0xFF64748B))),
+            ]),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isDone ? Colors.white : _primaryBlue,
-              foregroundColor: isDone ? _primaryBlue : Colors.white,
-              elevation: 0,
-              side: isDone ? BorderSide(color: _primaryBlue) : BorderSide.none,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: isDone ? Colors.white : _primaryBlue, foregroundColor: isDone ? _primaryBlue : Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () => _openGradingModal(id, attempt, isDone),
             child: Text(isDone ? 'Edit' : 'Grade'),
           ),
@@ -210,9 +177,11 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
   void _openGradingModal(String attemptId, Map<String, dynamic> attempt, bool isDone) async {
     final String candidateName = attempt['candidate']?['name'] ?? 'Student';
     final String examId = attempt['examId'] ?? '';
-    final scoreController = TextEditingController(text: (attempt['totalPoints'] ?? '').toString());
-    final feedbackController = TextEditingController(text: attempt['score']?.toString() ?? '');
+    final remarkController = TextEditingController(text: attempt['remarks'] ?? '');
     
+    // Key: QuestionID, Value: Controller for that question's marks
+    final Map<String, TextEditingController> scoreControllers = {};
+
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
     final results = await Future.wait([
       _db.child('exams/$examId/questions').get(),
@@ -220,8 +189,16 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     ]);
     if (mounted) Navigator.pop(context);
 
-    final Map<dynamic, dynamic> originalQuestions = (results[0].value as Map?) ?? {};
-    final Map<dynamic, dynamic> studentAnswers = (results[1].value as Map?) ?? {};
+    final Map originalQuestions = (results[0].value as Map?) ?? {};
+    final Map studentAnswers = (results[1].value as Map?) ?? {};
+
+    // Initialize controllers for each question
+    studentAnswers.forEach((qId, data) {
+      final ansData = Map.from(data as Map);
+      scoreControllers[qId.toString()] = TextEditingController(
+        text: (ansData['manualPoints'] ?? ansData['autoPoints'] ?? '0').toString()
+      );
+    });
 
     showModalBottomSheet(
       context: context,
@@ -236,7 +213,10 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(candidateName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(candidateName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text("Max Possible: ${attempt['totalPossible'] ?? '?'}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ]),
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
               ],
             ),
@@ -246,28 +226,25 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                 child: Column(
                   children: [
                     ...studentAnswers.entries.map((entry) {
+                      final qId = entry.key.toString();
                       final studentData = Map<String, dynamic>.from(entry.value as Map);
-                      final questionObj = originalQuestions[entry.key.toString()];
-                      return _buildAnswerCard(questionObj?['stem'] ?? "Question missing", 
-                        studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A"), studentData['type'] ?? 'written');
+                      final questionObj = originalQuestions[qId];
+                      return _buildAnswerGradingCard(
+                        stem: questionObj?['stem'] ?? "Question missing", 
+                        response: studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A"), 
+                        type: studentData['type'] ?? 'written',
+                        controller: scoreControllers[qId]!,
+                      );
                     }),
                     const SizedBox(height: 20),
-                    _buildInputField('TOTAL SCORE', scoreController, true),
-                    const SizedBox(height: 16),
-                    _buildInputField('FEEDBACK / REMARKS', feedbackController, false),
+                    _buildInputField('OVERALL FEEDBACK', remarkController, false),
                     const SizedBox(height: 24),
                     SizedBox(width: double.infinity, height: 56, 
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(backgroundColor: _primaryBlue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                        onPressed: () => _submitFinalGrade(attemptId, feedbackController.text.trim(), scoreController.text.trim()),
-                        child: const Text('SUBMIT FINAL GRADE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                        onPressed: () => _submitPerQuestionGrade(attemptId, remarkController.text.trim(), scoreControllers),
+                        child: const Text('SAVE PER-QUESTION GRADES', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                       )),
-                    if (isDone) 
-                      TextButton.icon(
-                        icon: const Icon(Icons.undo_rounded, color: Colors.redAccent),
-                        label: const Text('RESET TO UNGRADED', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                        onPressed: () => _resetToPending(attemptId),
-                      ),
                   ],
                 ),
               ),
@@ -278,45 +255,83 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     );
   }
 
+  Widget _buildAnswerGradingCard({required String stem, required String response, required String type, required TextEditingController controller}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(type.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _primaryBlue, letterSpacing: 1)),
+        const SizedBox(height: 8),
+        LatexText(stem, size: 14),
+        const Divider(height: 24),
+        Container(
+          width: double.infinity, padding: const EdgeInsets.all(12), 
+          decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(10)), 
+          child: LatexText(response, size: 15)
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            const Text("ASSIGN MARKS:", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 80,
+              height: 40,
+              child: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                decoration: InputDecoration(
+                  contentPadding: EdgeInsets.zero,
+                  filled: true, fillColor: _primaryBlue.withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _primaryBlue.withOpacity(0.2))),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ]),
+    );
+  }
+
   Widget _buildInputField(String label, TextEditingController controller, bool isNumber) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF64748B), letterSpacing: 1.2)),
       const SizedBox(height: 8),
       TextField(
         controller: controller,
-        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: const Color(0xFFF8FAFC)),
+        maxLines: isNumber ? 1 : 3,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.multiline,
+        decoration: InputDecoration(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), 
+          filled: true, fillColor: const Color(0xFFF8FAFC),
+        ),
       ),
     ]);
   }
 
-  Future<void> _submitFinalGrade(String attemptId, String feedback, String points) async {
-    await _db.child('attempts/$attemptId').update({
-      'status': 'completed', 'score': feedback, 'totalPoints': points,
-      'gradedAt': ServerValue.timestamp, 'isManualGraded': true
-    });
-    if (mounted) Navigator.pop(context);
-  }
+  Future<void> _submitPerQuestionGrade(String attemptId, String feedback, Map<String, TextEditingController> scoreControllers) async {
+    double totalCalculatedScore = 0;
+    final Map<String, dynamic> updates = {};
 
-  Future<void> _resetToPending(String attemptId) async {
-    await _db.child('attempts/$attemptId').update({
-      'status': 'submitted', 'score': null, 'totalPoints': null, 'isManualGraded': false, 'gradedAt': null,
+    // 1. Prepare updates for individual questions in 'attemptAnswers'
+    scoreControllers.forEach((qId, controller) {
+      double qScore = double.tryParse(controller.text) ?? 0;
+      totalCalculatedScore += qScore;
+      updates['attemptAnswers/$attemptId/$qId/manualPoints'] = qScore;
     });
-    if (mounted) Navigator.pop(context);
-  }
 
-  Widget _buildAnswerCard(String stem, String response, String type) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(type == 'mcq' ? 'MULTIPLE CHOICE' : 'WRITTEN ANSWER', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: _primaryBlue)),
-        const SizedBox(height: 8),
-        LatexText(stem, size: 14),
-        const Divider(height: 24),
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(10)), child: LatexText(response, size: 15)),
-      ]),
-    );
+    // 2. Prepare updates for the main 'attempts' node
+    updates['attempts/$attemptId/status'] = 'completed';
+    updates['attempts/$attemptId/remarks'] = feedback;
+    updates['attempts/$attemptId/score'] = totalCalculatedScore; // Saved as double for math
+    updates['attempts/$attemptId/totalPoints'] = totalCalculatedScore;
+    updates['attempts/$attemptId/isManualGraded'] = true;
+    updates['attempts/$attemptId/gradedAt'] = ServerValue.timestamp;
+
+    await _db.update(updates);
+    if (mounted) Navigator.pop(context);
   }
 }
