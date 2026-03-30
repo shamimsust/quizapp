@@ -123,14 +123,17 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 
     questions.forEach((qId, qValue) {
       final qData = Map<String, dynamic>.from(qValue as Map);
+      final String type = qData['type']?.toString() ?? 'mcq_single';
+      if (type == 'info_block') return;
+
       final studentAns = Map<String, dynamic>.from((answers[qId] ?? {}) as Map);
-      final bool isMCQ = qData['type']?.toString().contains('mcq') ?? false;
+      final bool isMCQ = type.contains('mcq');
       
       if (isMCQ) {
         final List correctOptions = List.from(qData['correctOptions'] ?? []);
         final dynamic selected = studentAns['selected'];
         final bool isThisCorrect = selected is List 
-            ? selected.any((e) => correctOptions.contains(e)) 
+            ? (selected.length == correctOptions.length && selected.every((e) => correctOptions.contains(e)))
             : correctOptions.contains(selected);
         isThisCorrect ? correctCount++ : incorrectCount++;
       } else {
@@ -155,21 +158,21 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       child: GestureDetector(
         onTap: () => setState(() {
           _filter = isActive ? null : type;
-          _showDetails = true; // Auto-open details when filtering
+          _showDetails = true; 
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: isActive ? color : color.withValues(alpha:0.05),
+            color: isActive ? color : color.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isActive ? color : color.withValues(alpha:0.1), width: 2),
-            boxShadow: isActive ? [BoxShadow(color: color.withValues(alpha:0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
+            border: Border.all(color: isActive ? color : color.withValues(alpha: 0.1), width: 2),
+            boxShadow: isActive ? [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))] : [],
           ),
           child: Column(
             children: [
               Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: isActive ? Colors.white : color)),
-              Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isActive ? Colors.white70 : color.withValues(alpha:0.6), letterSpacing: 1)),
+              Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isActive ? Colors.white70 : color.withValues(alpha: 0.6), letterSpacing: 1)),
             ],
           ),
         ),
@@ -178,33 +181,26 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   }
 
   Widget _buildDetailedList(Map questions, Map answers, Color brandBlue) {
-    // Filter the entry list before mapping to widgets
     final entries = questions.entries.where((entry) {
+      final qData = Map<String, dynamic>.from(entry.value as Map);
+      final String type = qData['type']?.toString() ?? 'mcq_single';
+      
+      if (type == 'info_block') return _filter == null;
       if (_filter == null) return true;
       
-      final qData = Map<String, dynamic>.from(entry.value as Map);
       final studentAns = Map<String, dynamic>.from((answers[entry.key] ?? {}) as Map);
-      final bool isMCQ = qData['type']?.toString().contains('mcq') ?? false;
+      final bool isMCQ = type.contains('mcq');
 
       if (_filter == 'written') return !isMCQ;
 
       final List correctOptions = List.from(qData['correctOptions'] ?? []);
       final dynamic selected = studentAns['selected'];
       final bool isCorrect = isMCQ && (selected is List 
-          ? selected.any((e) => correctOptions.contains(e)) 
+          ? (selected.length == correctOptions.length && selected.every((e) => correctOptions.contains(e)))
           : correctOptions.contains(selected));
 
       return _filter == 'correct' ? isCorrect : (isMCQ && !isCorrect);
     }).toList();
-
-    if (entries.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Text("No questions match this filter.", style: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.bold)),
-        ),
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,8 +221,12 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
         ...entries.map((entry) {
           final qId = entry.key;
           final qData = Map<String, dynamic>.from(entry.value as Map);
+          final String type = qData['type']?.toString() ?? 'mcq_single';
+          final bool isInfo = type == 'info_block';
+          final String? imageUrl = qData['imageUrl'];
+          
           final studentAns = Map<String, dynamic>.from((answers[qId] ?? {}) as Map);
-          final bool isMCQ = qData['type']?.toString().contains('mcq') ?? false;
+          final bool isMCQ = type.contains('mcq');
           final List options = qData['options'] ?? [];
           final List correctOptions = List.from(qData['correctOptions'] ?? []);
           final dynamic selected = studentAns['selected'];
@@ -235,14 +235,31 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              color: isInfo ? brandBlue.withValues(alpha: 0.02) : Colors.white, 
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: isInfo ? brandBlue.withValues(alpha: 0.1) : const Color(0xFFE2E8F0)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                LatexText(qData['stem'] ?? '', size: 14),
-                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    if (isInfo) const Icon(Icons.info_outline, size: 16, color: Colors.blueGrey),
+                    if (isInfo) const SizedBox(width: 8),
+                    Expanded(child: LatexText(qData['stem'] ?? '', size: 14)),
+                  ],
+                ),
+                
+                if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(imageUrl, width: double.infinity, fit: BoxFit.contain),
+                  ),
+                ],
+
+                if (!isInfo) const SizedBox(height: 16),
+                
                 if (isMCQ) ...[
                   ...options.map((opt) {
                     final String optId = opt is Map ? (opt['id']?.toString() ?? '') : '';
@@ -255,11 +272,11 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     Widget trailingIcon = const Icon(Icons.radio_button_unchecked_rounded, size: 16, color: Color(0xFFCBD5E1));
 
                     if (isThisCorrect) {
-                      bgColor = Colors.green.withValues(alpha:0.08);
+                      bgColor = Colors.green.withValues(alpha: 0.08);
                       borderColor = Colors.green.shade200;
                       trailingIcon = const Icon(Icons.check_circle_rounded, size: 18, color: Colors.green);
                     } else if (isThisSelected) {
-                      bgColor = Colors.red.withValues(alpha:0.08);
+                      bgColor = Colors.red.withValues(alpha: 0.08);
                       borderColor = Colors.red.shade200;
                       trailingIcon = const Icon(Icons.cancel_rounded, size: 18, color: Colors.red);
                     }
@@ -282,8 +299,24 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                       ),
                     );
                   }),
-                ] else ...[
+                ] else if (!isInfo) ...[
                   _buildResponseRow("YOUR RESPONSE", studentAns['text'] ?? 'No Answer', brandBlue),
+                  
+                  // STUDENT'S UPLOADED IMAGE (ImgBB)
+                  if (studentAns['answerImageUrl'] != null) ...[
+                    const SizedBox(height: 12),
+                    const Text("ATTACHED EVIDENCE:", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: GestureDetector(
+                        onTap: () => _showFullScreenImage(studentAns['answerImageUrl']),
+                        child: Image.network(studentAns['answerImageUrl'], width: double.infinity, height: 160, fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+                      ),
+                    ),
+                  ],
+
                   if (studentAns['manualPoints'] != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -296,6 +329,22 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
           );
         }),
       ],
+    );
+  }
+
+  void _showFullScreenImage(String url) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            InteractiveViewer(child: Center(child: Image.network(url))),
+            Positioned(top: 40, right: 20, child: CircleAvatar(backgroundColor: Colors.black54, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
+          ],
+        ),
+      ),
     );
   }
 
@@ -323,7 +372,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.04), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 20, offset: const Offset(0, 10))],
       ),
       child: Column(
         children: [
@@ -345,7 +394,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   Widget _buildIllustration(bool isPending, Color brandBlue) {
     return Container(
       width: 100, height: 100,
-      decoration: BoxDecoration(color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withValues(alpha:0.1), shape: BoxShape.circle),
+      decoration: BoxDecoration(color: isPending ? const Color(0xFFFFF7ED) : brandBlue.withValues(alpha: 0.1), shape: BoxShape.circle),
       child: Icon(isPending ? Icons.hourglass_top_rounded : Icons.workspace_premium_rounded, size: 48, color: isPending ? Colors.orange : brandBlue),
     );
   }

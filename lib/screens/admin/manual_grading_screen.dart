@@ -49,7 +49,6 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     );
   }
 
-  // ... [Keep _buildExamSelectionUI and _buildExamList exactly as they were] ...
   Widget _buildExamSelectionUI() {
     return Column(
       children: [
@@ -179,7 +178,6 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     final String examId = attempt['examId'] ?? '';
     final remarkController = TextEditingController(text: attempt['remarks'] ?? '');
     
-    // Key: QuestionID, Value: Controller for that question's marks
     final Map<String, TextEditingController> scoreControllers = {};
 
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
@@ -192,14 +190,6 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
 
     final Map originalQuestions = (results[0].value as Map?) ?? {};
     final Map studentAnswers = (results[1].value as Map?) ?? {};
-
-    // Initialize controllers for each question
-    studentAnswers.forEach((qId, data) {
-      final ansData = Map.from(data as Map);
-      scoreControllers[qId.toString()] = TextEditingController(
-        text: (ansData['manualPoints'] ?? ansData['autoPoints'] ?? '0').toString()
-      );
-    });
 
     showModalBottomSheet(
       context: context,
@@ -226,12 +216,23 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    ...studentAnswers.entries.map((entry) {
+                    ...studentAnswers.entries.where((e) {
+                        final q = originalQuestions[e.key.toString()];
+                        return q != null && q['type'] != 'info_block';
+                    }).map((entry) {
                       final qId = entry.key.toString();
                       final studentData = Map<String, dynamic>.from(entry.value as Map);
                       final questionObj = originalQuestions[qId];
+                      
+                      // Initialize controller
+                      scoreControllers[qId] = TextEditingController(
+                        text: (studentData['manualPoints'] ?? studentData['autoPoints'] ?? '0').toString()
+                      );
+
                       return _buildAnswerGradingCard(
                         stem: questionObj?['stem'] ?? "Question missing", 
+                        questionImageUrl: questionObj?['imageUrl'],
+                        answerImageUrl: studentData['answerImageUrl'], // Added for student uploads
                         response: studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A"), 
                         type: studentData['type'] ?? 'written',
                         controller: scoreControllers[qId]!,
@@ -256,7 +257,14 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     );
   }
 
-  Widget _buildAnswerGradingCard({required String stem, required String response, required String type, required TextEditingController controller}) {
+  Widget _buildAnswerGradingCard({
+    required String stem, 
+    String? questionImageUrl,
+    String? answerImageUrl,
+    required String response, 
+    required String type, 
+    required TextEditingController controller
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(16),
@@ -265,12 +273,41 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
         Text(type.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _primaryBlue, letterSpacing: 1)),
         const SizedBox(height: 8),
         LatexText(stem, size: 14),
+        
+        // Question Image (Teacher's prompt)
+        if (questionImageUrl != null && questionImageUrl.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(questionImageUrl, width: double.infinity, fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+          ),
+        ],
+
         const Divider(height: 24),
+        const Text("STUDENT RESPONSE:", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+        const SizedBox(height: 8),
         Container(
           width: double.infinity, padding: const EdgeInsets.all(12), 
           decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(10)), 
           child: LatexText(response, size: 15)
         ),
+
+        // Student's Uploaded Image (Evidence/Diagram)
+        if (answerImageUrl != null && answerImageUrl.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text("ATTACHED EVIDENCE:", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: GestureDetector(
+              onTap: () => _showFullScreenImage(answerImageUrl),
+              child: Image.network(answerImageUrl, width: double.infinity, fit: BoxFit.cover, height: 200,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+            ),
+          ),
+        ],
+
         const SizedBox(height: 16),
         Row(
           children: [
@@ -297,6 +334,22 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     );
   }
 
+  void _showFullScreenImage(String url) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            InteractiveViewer(child: Center(child: Image.network(url))),
+            Positioned(top: 40, right: 20, child: CircleAvatar(backgroundColor: Colors.black54, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputField(String label, TextEditingController controller, bool isNumber) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF64748B), letterSpacing: 1.2)),
@@ -317,17 +370,15 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     double totalCalculatedScore = 0;
     final Map<String, dynamic> updates = {};
 
-    // 1. Prepare updates for individual questions in 'attemptAnswers'
     scoreControllers.forEach((qId, controller) {
       final double qScore = double.tryParse(controller.text) ?? 0;
       totalCalculatedScore += qScore;
       updates['attemptAnswers/$attemptId/$qId/manualPoints'] = qScore;
     });
 
-    // 2. Prepare updates for the main 'attempts' node
     updates['attempts/$attemptId/status'] = 'completed';
     updates['attempts/$attemptId/remarks'] = feedback;
-    updates['attempts/$attemptId/score'] = totalCalculatedScore; // Saved as double for math
+    updates['attempts/$attemptId/score'] = totalCalculatedScore;
     updates['attempts/$attemptId/totalPoints'] = totalCalculatedScore;
     updates['attempts/$attemptId/isManualGraded'] = true;
     updates['attempts/$attemptId/gradedAt'] = ServerValue.timestamp;

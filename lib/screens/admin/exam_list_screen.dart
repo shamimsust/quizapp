@@ -44,6 +44,8 @@ class ExamListScreen extends StatelessWidget {
               final String status = val['status'] ?? 'draft';
               final bool isPublished = status == 'published';
               final bool isManual = val['isManualGrading'] ?? false;
+              final bool shuffleQ = val['shuffleQuestions'] ?? false;
+              final bool shuffleOpt = val['shuffleOptions'] ?? false;
               
               final questionCount = val['questions'] != null 
                   ? (val['questions'] as Map).length 
@@ -56,7 +58,7 @@ class ExamListScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 10, offset: const Offset(0, 4))
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))
                   ],
                 ),
                 child: ListTile(
@@ -67,18 +69,18 @@ class ExamListScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 8),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           _buildBadge(
                             isPublished ? 'PUBLISHED' : 'DRAFT', 
                             isPublished ? Colors.green : Colors.orange
                           ),
-                          const SizedBox(width: 8),
                           _buildBadge('$questionCount Qs', brandBlue),
-                          if (isManual) ...[
-                            const SizedBox(width: 8),
-                            _buildBadge('MANUAL', Colors.purple),
-                          ]
+                          if (shuffleQ) _buildBadge('SHUFFLE Q', Colors.blueGrey),
+                          if (shuffleOpt) _buildBadge('SHUFFLE OPT', Colors.indigo),
+                          if (isManual) _buildBadge('MANUAL', Colors.purple),
                         ],
                       ),
                     ],
@@ -86,10 +88,24 @@ class ExamListScreen extends StatelessWidget {
                   trailing: PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF94A3B8)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    onSelected: (value) => _handleMenuAction(context, value, id, title, isPublished),
+                    onSelected: (value) => _handleMenuAction(context, value, id, title, isPublished, shuffleQ, shuffleOpt),
                     itemBuilder: (context) => [
                       const PopupMenuItem(value: 'edit', child: _MenuLabel(Icons.edit_note_rounded, 'Edit Questions')),
                       const PopupMenuItem(value: 'copy_id', child: _MenuLabel(Icons.copy_rounded, 'Copy Exam ID')),
+                      PopupMenuItem(
+                        value: 'toggle_shuffle_q', 
+                        child: _MenuLabel(
+                          shuffleQ ? Icons.shuffle_on_rounded : Icons.shuffle_rounded, 
+                          shuffleQ ? 'Disable Q-Shuffle' : 'Enable Q-Shuffle'
+                        )
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle_shuffle_opt', 
+                        child: _MenuLabel(
+                          shuffleOpt ? Icons.format_list_numbered_rounded : Icons.low_priority_rounded, 
+                          shuffleOpt ? 'Disable Opt-Shuffle' : 'Enable Opt-Shuffle'
+                        )
+                      ),
                       PopupMenuItem(
                         value: 'toggle_status', 
                         child: _MenuLabel(
@@ -124,7 +140,7 @@ class ExamListScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withAlpha(26),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, 
@@ -157,7 +173,9 @@ class ExamListScreen extends StatelessWidget {
 
   // --- Logic Handlers ---
 
-  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished) {
+  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt) {
+    final ref = FirebaseDatabase.instance.ref('exams/$id');
+    
     switch (action) {
       case 'edit':
         context.push('/admin/exam-builder/questions/$id');
@@ -166,10 +184,14 @@ class ExamListScreen extends StatelessWidget {
         Clipboard.setData(ClipboardData(text: id));
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID copied to clipboard')));
         break;
+      case 'toggle_shuffle_q':
+        ref.update({'shuffleQuestions': !shuffleQ});
+        break;
+      case 'toggle_shuffle_opt':
+        ref.update({'shuffleOptions': !shuffleOpt});
+        break;
       case 'toggle_status':
-        FirebaseDatabase.instance.ref('exams/$id').update({
-          'status': isPublished ? 'draft' : 'published'
-        });
+        ref.update({'status': isPublished ? 'draft' : 'published'});
         break;
       case 'delete':
         _confirmDeleteExam(context, id, title);
