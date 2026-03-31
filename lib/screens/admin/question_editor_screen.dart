@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
@@ -58,25 +58,31 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   }
 
   // --- IMGBB UPLOAD LOGIC ---
+  // --- FIXED IMGBB UPLOAD LOGIC ---
   Future<void> _pickAndUploadImage() async {
+    // 1. Keep the picker at the very top (for the User Gesture requirement)
     final ImagePicker picker = ImagePicker();
-    final XFile? image =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery, 
+      imageQuality: 75
+    );
 
     if (image == null) return;
 
     setState(() => _isUploading = true);
     try {
-      final bytes = await File(image.path).readAsBytes();
-      final base64Image = base64Encode(bytes);
-      final request = http.MultipartRequest(
+      // 2. DO NOT USE File(image.path). Use image.readAsBytes()
+      final Uint8List bytes = await image.readAsBytes(); 
+      final String base64Image = base64Encode(bytes);
+      
+      final http.MultipartRequest request = http.MultipartRequest(
           'POST', Uri.parse('https://api.imgbb.com/1/upload'));
       request.fields['key'] = _imgBBKey;
       request.fields['image'] = base64Image;
 
-      final response = await request.send();
-      final responseData = await response.stream.bytesToString();
-      final jsonResponse = jsonDecode(responseData);
+      final http.StreamedResponse response = await request.send();
+      final String responseData = await response.stream.bytesToString();
+      final Map<String, dynamic> jsonResponse = jsonDecode(responseData);
 
       if (response.statusCode == 200) {
         setState(() => _imageUrl = jsonResponse['data']['url']);
@@ -87,7 +93,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     } catch (e) {
       _showSnackBar('Upload Error: $e', isError: true);
     } finally {
-      setState(() => _isUploading = false);
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 

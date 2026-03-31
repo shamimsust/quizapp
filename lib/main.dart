@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart'; // Added this
+import 'package:google_fonts/google_fonts.dart';
 import 'router.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
@@ -27,11 +27,24 @@ class MyApp extends ConsumerWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: brandBlue),
-        // Use GoogleFonts to apply Inter globally
-        textTheme: GoogleFonts.interTextTheme(), 
+        
+        // 1. Define the primary font as Inter via GoogleFonts
+        // 2. Add 'SolaimanLipi' as a fallback for non-Latin characters
+        textTheme: GoogleFonts.interTextTheme(
+          ThemeData.light().textTheme,
+        ).apply(
+          fontFamilyFallback: ['SolaimanLipi'],
+        ),
+
         appBarTheme: const AppBarTheme(
           backgroundColor: brandBlue,
           foregroundColor: Colors.white,
+          titleTextStyle: TextStyle(
+            fontFamily: 'Inter',
+            fontFamilyFallback: ['SolaimanLipi'],
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       routerConfig: appRouter,
