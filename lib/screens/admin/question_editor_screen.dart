@@ -24,7 +24,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   String _type = 'mcq_single';
   final _stemController = TextEditingController();
   final _marksController = TextEditingController(text: '1');
-  final _bulkInputController = TextEditingController(); // Changed from JSON
+  final _bulkInputController = TextEditingController(); 
 
   bool _isSaving = false;
   bool _isUploading = false;
@@ -58,9 +58,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   }
 
   // --- IMGBB UPLOAD LOGIC ---
-  // --- FIXED IMGBB UPLOAD LOGIC ---
   Future<void> _pickAndUploadImage() async {
-    // 1. Keep the picker at the very top (for the User Gesture requirement)
+    // 1. Trigger the picker as the absolute first step (User Gesture Requirement)
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(
       source: ImageSource.gallery, 
@@ -69,9 +68,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
     if (image == null) return;
 
+    // 2. Start UI loading after the picker returns
     setState(() => _isUploading = true);
     try {
-      // 2. DO NOT USE File(image.path). Use image.readAsBytes()
+      // 3. Use readAsBytes() (Compatible with Web/Mobile) instead of File(image.path)
       final Uint8List bytes = await image.readAsBytes(); 
       final String base64Image = base64Encode(bytes);
       
@@ -85,7 +85,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       final Map<String, dynamic> jsonResponse = jsonDecode(responseData);
 
       if (response.statusCode == 200) {
-        setState(() => _imageUrl = jsonResponse['data']['url']);
+        if (mounted) {
+          setState(() => _imageUrl = jsonResponse['data']['url']);
+        }
         _showSnackBar('Image uploaded to ImgBB!');
       } else {
         throw Exception(jsonResponse['error']['message'] ?? 'Upload failed');
@@ -116,7 +118,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         final parts = trimmed.split('|').map((e) => e.trim()).toList();
         final Map<String, dynamic> qData = {'order': baseOrder++};
 
-        // If 7 parts: Stem | A | B | C | D | Ans | Marks (MCQ)
         if (parts.length >= 7) {
           qData.addAll({
             'type': 'mcq_single',
@@ -131,7 +132,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             'marks': int.tryParse(parts[6]) ?? 1,
           });
         }
-        // If 2 parts: Stem | Marks (Written)
         else if (parts.length >= 2) {
           qData.addAll({
             'type': 'written',
@@ -139,7 +139,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             'marks': int.tryParse(parts[1]) ?? 5,
           });
         } else {
-          continue; // Skip lines that don't match
+          continue; 
         }
 
         await ref.push().set(qData);

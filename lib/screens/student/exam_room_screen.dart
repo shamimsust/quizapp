@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data'; // Added for web-safe byte handling
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
@@ -128,13 +128,16 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
 
   // --- STUDENT IMAGE UPLOAD (ImgBB) ---
   Future<void> _uploadAnswerImage(String qid) async {
+    // Call picker first for browser security (User Gesture Requirement)
     final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60);
     if (image == null) return;
 
     setState(() => _uploadingStates[qid] = true);
 
     try {
-      final bytes = await File(image.path).readAsBytes();
+      // Use readAsBytes() which works on both Web and Mobile. 
+      // Avoid dart:io 'File' as it crashes on browsers.
+      final Uint8List bytes = await image.readAsBytes();
       final base64Image = base64Encode(bytes);
 
       final request = http.MultipartRequest('POST', Uri.parse('https://api.imgbb.com/1/upload'));
@@ -431,7 +434,7 @@ class _ExamTimerState extends State<ExamTimer> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(color: isUrgent ? Colors.red.shade50 : const Color(0xFF2264D7).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: isUrgent ? Colors.red : const Color(0xFF2264D7))),
+      decoration: BoxDecoration(color: isUrgent ? Colors.red.shade50 : const Color(0xFF2264D7).withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: isUrgent ? Colors.red : const Color(0xFF2264D7))),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.timer_outlined, size: 18, color: isUrgent ? Colors.red : const Color(0xFF2264D7)),
         const SizedBox(width: 8),
