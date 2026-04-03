@@ -63,7 +63,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(
       source: ImageSource.gallery, 
-      imageQuality: 75
+      maxWidth: 1024,      // Limits width to 1024px (Perfect for mobile/web)
+      maxHeight: 1024,     // Limits height
+      imageQuality: 50,
     );
 
     if (image == null) return;
