@@ -104,37 +104,24 @@ class AdminDashboardScreen extends StatelessWidget {
   }
 
   Widget _buildStatCards() {
-    return const Column( // Added 'const' here
+    return const Row(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Active Tokens', 
-                path: 'examTokens', 
-                icon: Icons.vpn_key_rounded, 
-                color: Color(0xFFF59E0B)
-              )
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: _StatCard(
-                label: 'Active Takers', 
-                path: 'attempts', 
-                icon: Icons.person_search_rounded, 
-                color: Color(0xFF2264D7),
-                filterActive: true,
-              )
-            ),
-          ],
+        Expanded(
+          child: _StatCard(
+            label: 'Active Tokens', 
+            path: 'examTokens', 
+            icon: Icons.vpn_key_rounded, 
+            color: Color(0xFFF59E0B)
+          )
         ),
-        SizedBox(height: 16),
-        _StatCard(
-          label: 'Total Completed Attempts', 
-          path: 'attempts', 
-          icon: Icons.analytics_rounded, 
-          color: Color(0xFF10B981),
-          fullWidth: true,
+        SizedBox(width: 16),
+        Expanded(
+          child: _StatCard(
+            label: 'Total Attempts', 
+            path: 'attempts', 
+            icon: Icons.analytics_rounded, 
+            color: Color(0xFF10B981)
+          )
         ),
       ],
     );
@@ -168,16 +155,12 @@ class _StatCard extends StatelessWidget {
   final String path;
   final IconData icon;
   final Color color;
-  final bool filterActive;
-  final bool fullWidth;
 
   const _StatCard({
     required this.label, 
     required this.path, 
     required this.icon, 
     required this.color,
-    this.filterActive = false,
-    this.fullWidth = false,
   });
 
   @override
@@ -189,49 +172,54 @@ class _StatCard extends StatelessWidget {
         if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
           final data = snapshot.data!.snapshot.value;
           if (data is Map) {
-            if (filterActive) {
-              count = data.values.where((v) => v is Map && v['status'] == 'started').length;
-            } else {
-              count = data.length;
-            }
+            count = data.length;
           }
         }
 
         return Container(
-          width: fullWidth ? double.infinity : null,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
-              BoxShadow(color: Colors.black.withAlpha((255 * 0.03).round()), blurRadius: 10, offset: const Offset(0, 4))
+              BoxShadow(
+                color: Colors.black.withAlpha((255 * 0.03).round()), 
+                blurRadius: 10, 
+                offset: const Offset(0, 4)
+              )
             ],
             border: Border.all(color: const Color(0xFFF1F5F9)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: color.withAlpha((255 * 0.1).round()), borderRadius: BorderRadius.circular(8)),
-                    child: Icon(icon, color: color, size: 18),
-                  ),
-                  if (filterActive && count > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(20)),
-                      child: const Text("LIVE", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
-                    )
-                ],
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withAlpha((255 * 0.1).round()), 
+                  borderRadius: BorderRadius.circular(8)
+                ),
+                child: Icon(icon, color: color, size: 18),
               ),
               const SizedBox(height: 16),
-              Text(count.toString(), 
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, fontFamily: 'Inter', color: Color(0xFF0F172A))),
-              Text(label, 
-                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500, fontFamily: 'Inter')),
+              Text(
+                count.toString(), 
+                style: const TextStyle(
+                  fontSize: 28, 
+                  fontWeight: FontWeight.w900, 
+                  fontFamily: 'Inter', 
+                  color: Color(0xFF0F172A)
+                )
+              ),
+              Text(
+                label, 
+                style: const TextStyle(
+                  fontSize: 12, 
+                  color: Color(0xFF64748B), 
+                  fontWeight: FontWeight.w500, 
+                  fontFamily: 'Inter'
+                )
+              ),
             ],
           ),
         );
@@ -270,14 +258,31 @@ class _DashboardTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         leading: Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: themeColor.withAlpha((255 * 0.1).round()), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+            color: themeColor.withAlpha((255 * 0.1).round()), 
+            borderRadius: BorderRadius.circular(12)
+          ),
           child: Icon(icon, color: themeColor, size: 24),
         ),
-        title: Text(title, 
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B), fontFamily: 'Inter')),
+        title: Text(
+          title, 
+          style: const TextStyle(
+            fontWeight: FontWeight.w800, 
+            fontSize: 16, 
+            color: Color(0xFF1E293B), 
+            fontFamily: 'Inter'
+          )
+        ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(subtitle, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontFamily: 'Inter')),
+          child: Text(
+            subtitle, 
+            style: const TextStyle(
+              fontSize: 13, 
+              color: Color(0xFF64748B), 
+              fontFamily: 'Inter'
+            )
+          ),
         ),
         trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFFCBD5E1)),
         onTap: onTap,
