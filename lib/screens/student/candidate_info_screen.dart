@@ -241,7 +241,7 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       // Create Attempt
       final newAttemptRef = _db.child('attempts').push();
       final attemptId = newAttemptRef.key;
-      final startTime = ServerValue.timestamp; // Use ServerValue for accuracy
+      const startTime = ServerValue.timestamp; // Use ServerValue for accuracy
 
       await newAttemptRef.set({
         'examId': _actualExamId,

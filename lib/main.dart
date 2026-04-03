@@ -9,7 +9,10 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // This is the only web-specific line you need
   usePathUrlStrategy();
+  
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -27,15 +30,11 @@ class MyApp extends ConsumerWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: brandBlue),
-        
-        // 1. Define the primary font as Inter via GoogleFonts
-        // 2. Add 'SolaimanLipi' as a fallback for non-Latin characters
         textTheme: GoogleFonts.interTextTheme(
           ThemeData.light().textTheme,
         ).apply(
           fontFamilyFallback: ['SolaimanLipi'],
         ),
-
         appBarTheme: const AppBarTheme(
           backgroundColor: brandBlue,
           foregroundColor: Colors.white,
