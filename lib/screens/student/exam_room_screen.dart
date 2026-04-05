@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data'; // Added for web-safe byte handling
+import 'dart:typed_data'; 
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
@@ -19,17 +19,16 @@ class ExamRoomScreen extends StatefulWidget {
 
 class _ExamRoomScreenState extends State<ExamRoomScreen> {
   final _db = FirebaseDatabase.instance.ref();
-  
-  // ImgBB API Configuration
   final String _imgBBKey = "bd9c2f7a1ff71a3e72aead970348d485";
 
   Map<String, dynamic>? attempt;
   List<Map<String, dynamic>> questions = [];
+  bool _allowStudentUpload = false; // New state variable
   
   final Map<String, List<String>> _selected = {};
   final Map<String, TextEditingController> _controllers = {};
-  final Map<String, String?> _writtenImages = {}; // Track student uploads
-  final Map<String, bool> _uploadingStates = {}; // Track individual upload button states
+  final Map<String, String?> _writtenImages = {}; 
+  final Map<String, bool> _uploadingStates = {}; 
   
   bool _submitting = false;
   String? _error;
@@ -73,8 +72,10 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
 
       final examSnap = await _db.child('exams/$examId').get();
       final examMeta = examSnap.exists ? Map<String, dynamic>.from(examSnap.value as Map) : {};
+      
       final bool shuffleQ = examMeta['shuffleQuestions'] ?? false;
       final bool shuffleOpt = examMeta['shuffleOptions'] ?? false;
+      final bool allowUpload = examMeta['allowStudentUpload'] ?? false; // Fetch the toggle
 
       final qSnap = await _db.child('exams/$examId/questions').get();
       final List<Map<String, dynamic>> loadedQuestions = [];
@@ -114,6 +115,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
         setState(() {
           attempt = attData;
           questions = loadedQuestions;
+          _allowStudentUpload = allowUpload; // Update state
           _lastSynced = DateTime.now();
         });
       }
@@ -126,17 +128,13 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
     if (mounted) setState(() => _lastSynced = DateTime.now());
   }
 
-  // --- STUDENT IMAGE UPLOAD (ImgBB) ---
   Future<void> _uploadAnswerImage(String qid) async {
-    // Call picker first for browser security (User Gesture Requirement)
     final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60);
     if (image == null) return;
 
     setState(() => _uploadingStates[qid] = true);
 
     try {
-      // Use readAsBytes() which works on both Web and Mobile. 
-      // Avoid dart:io 'File' as it crashes on browsers.
       final Uint8List bytes = await image.readAsBytes();
       final base64Image = base64Encode(bytes);
 
@@ -340,18 +338,21 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                             onChanged: (val) => _handleWrittenChange(qid, val),
                           ),
                           const SizedBox(height: 12),
-                          if (_writtenImages[qid] != null) ...[
-                            Stack(children: [
-                              ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(_writtenImages[qid]!, height: 120, width: double.infinity, fit: BoxFit.cover)),
-                              Positioned(right: 4, top: 4, child: CircleAvatar(backgroundColor: Colors.red, radius: 14, child: IconButton(icon: const Icon(Icons.close, size: 14, color: Colors.white), onPressed: () => setState(() => _writtenImages[qid] = null)))),
-                            ]),
-                            const SizedBox(height: 8),
-                          ],
-                          OutlinedButton.icon(
-                            onPressed: _uploadingStates[qid] == true ? null : () => _uploadAnswerImage(qid),
-                            icon: _uploadingStates[qid] == true ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.camera_alt_outlined, size: 18),
-                            label: Text(_uploadingStates[qid] == true ? 'Uploading...' : 'Attach Image Evidence'),
-                          )
+                          // PHOTO UPLOAD UI: Wrapped in the toggle check
+                          if (_allowStudentUpload) ...[
+                            if (_writtenImages[qid] != null) ...[
+                              Stack(children: [
+                                ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(_writtenImages[qid]!, height: 120, width: double.infinity, fit: BoxFit.cover)),
+                                Positioned(right: 4, top: 4, child: CircleAvatar(backgroundColor: Colors.red, radius: 14, child: IconButton(icon: const Icon(Icons.close, size: 14, color: Colors.white), onPressed: () => setState(() => _writtenImages[qid] = null)))),
+                              ]),
+                              const SizedBox(height: 8),
+                            ],
+                            OutlinedButton.icon(
+                              onPressed: _uploadingStates[qid] == true ? null : () => _uploadAnswerImage(qid),
+                              icon: _uploadingStates[qid] == true ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.camera_alt_outlined, size: 18),
+                              label: Text(_uploadingStates[qid] == true ? 'Uploading...' : 'Attach Image Evidence'),
+                            ),
+                          ]
                         ] else if (q['options'] != null && !isInfo)
                           ... (q['options'] as List).map((opt) {
                             final optId = opt['id'].toString();

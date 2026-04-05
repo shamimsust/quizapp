@@ -46,6 +46,7 @@ class ExamListScreen extends StatelessWidget {
               final bool isManual = val['isManualGrading'] ?? false;
               final bool shuffleQ = val['shuffleQuestions'] ?? false;
               final bool shuffleOpt = val['shuffleOptions'] ?? false;
+              final bool allowUpload = val['allowStudentUpload'] ?? false; // New field
               
               final questionCount = val['questions'] != null 
                   ? (val['questions'] as Map).length 
@@ -78,6 +79,7 @@ class ExamListScreen extends StatelessWidget {
                             isPublished ? Colors.green : Colors.orange
                           ),
                           _buildBadge('$questionCount Qs', brandBlue),
+                          if (allowUpload) _buildBadge('UPLOADS ON', Colors.teal), // New Badge
                           if (shuffleQ) _buildBadge('SHUFFLE Q', Colors.blueGrey),
                           if (shuffleOpt) _buildBadge('SHUFFLE OPT', Colors.indigo),
                           if (isManual) _buildBadge('MANUAL', Colors.purple),
@@ -88,10 +90,17 @@ class ExamListScreen extends StatelessWidget {
                   trailing: PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF94A3B8)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    onSelected: (value) => _handleMenuAction(context, value, id, title, isPublished, shuffleQ, shuffleOpt),
+                    onSelected: (value) => _handleMenuAction(context, value, id, title, isPublished, shuffleQ, shuffleOpt, allowUpload),
                     itemBuilder: (context) => [
                       const PopupMenuItem(value: 'edit', child: _MenuLabel(Icons.edit_note_rounded, 'Edit Questions')),
                       const PopupMenuItem(value: 'copy_id', child: _MenuLabel(Icons.copy_rounded, 'Copy Exam ID')),
+                      PopupMenuItem(
+                        value: 'toggle_upload', 
+                        child: _MenuLabel(
+                          allowUpload ? Icons.no_photography_rounded : Icons.add_a_photo_rounded, 
+                          allowUpload ? 'Disable Image Upload' : 'Enable Image Upload'
+                        )
+                      ),
                       PopupMenuItem(
                         value: 'toggle_shuffle_q', 
                         child: _MenuLabel(
@@ -173,7 +182,7 @@ class ExamListScreen extends StatelessWidget {
 
   // --- Logic Handlers ---
 
-  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt) {
+  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt, [bool allowUpload = false]) {
     final ref = FirebaseDatabase.instance.ref('exams/$id');
     
     switch (action) {
@@ -183,6 +192,9 @@ class ExamListScreen extends StatelessWidget {
       case 'copy_id':
         Clipboard.setData(ClipboardData(text: id));
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID copied to clipboard')));
+        break;
+      case 'toggle_upload':
+        ref.update({'allowStudentUpload': !allowUpload});
         break;
       case 'toggle_shuffle_q':
         ref.update({'shuffleQuestions': !shuffleQ});
