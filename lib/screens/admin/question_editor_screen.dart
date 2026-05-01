@@ -372,6 +372,21 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
         return SliverReorderableList(
           itemCount: list.length,
+          proxyDecorator: (child, index, animation) {
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, child) {
+                return Material(
+                  elevation: 8,
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  shadowColor: Colors.black.withValues(alpha: 0.3),
+                  child: child,
+                );
+              },
+              child: child,
+            );
+          },
           onReorder: (oldIndex, newIndex) {
             setState(() {
               if (newIndex > oldIndex) newIndex -= 1;
@@ -451,7 +466,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         children: [
           _buildLabel('CONTENT TYPE'),
           DropdownButtonFormField<String>(
-            value: _type,
+            initialValue: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() {
               _type = v!;
