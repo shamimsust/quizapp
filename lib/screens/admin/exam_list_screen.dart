@@ -21,7 +21,7 @@ class ExamListScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: StreamBuilder<DatabaseEvent>(
-        stream: FirebaseDatabase.instance.ref('exams').onValue,
+        stream: FirebaseDatabase.instance.ref('exams').orderByChild('order').onValue,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: brandBlue));
@@ -31,11 +31,25 @@ class ExamListScreen extends StatelessWidget {
           }
 
           final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
-          final exams = data.entries.toList();
+          final exams = data.entries.toList()
+            ..sort((a, b) => (a.value['order'] ?? 0).compareTo(b.value['order'] ?? 0));
 
-          return ListView.builder(
+          return ReorderableListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             itemCount: exams.length,
+            onReorder: (oldIndex, newIndex) async {
+              if (newIndex > oldIndex) newIndex -= 1;
+              
+              final items = List<MapEntry<String, dynamic>>.from(exams);
+              final movedItem = items.removeAt(oldIndex);
+              items.insert(newIndex, movedItem);
+
+              final updates = <String, dynamic>{};
+              for (int i = 0; i < items.length; i++) {
+                updates['${items[i].key}/order'] = i;
+              }
+              await FirebaseDatabase.instance.ref('exams').update(updates);
+            },
             itemBuilder: (context, index) {
               final id = exams[index].key;
               final val = Map<String, dynamic>.from(exams[index].value as Map);
@@ -43,12 +57,10 @@ class ExamListScreen extends StatelessWidget {
               final String title = val['title'] ?? 'Untitled Exam';
               final String status = val['status'] ?? 'draft';
               final bool isPublished = status == 'published';
-              final bool isManual = val['isManualGrading'] ?? false;
               final bool shuffleQ = val['shuffleQuestions'] ?? false;
               final bool shuffleOpt = val['shuffleOptions'] ?? false;
               final bool allowUpload = val['allowStudentUpload'] ?? false;
               
-              // UPDATED LOGIC: Calculate actual question count and total points
               int actualQuestionCount = 0;
               int totalPoints = 0;
               
@@ -56,7 +68,6 @@ class ExamListScreen extends StatelessWidget {
                 final questionsMap = Map<String, dynamic>.from(val['questions'] as Map);
                 for (var q in questionsMap.values) {
                   final qData = Map<String, dynamic>.from(q as Map);
-                  // Only count if it's not an info_block
                   if (qData['type'] != 'info_block') {
                     actualQuestionCount++;
                     totalPoints += (qData['marks'] as num? ?? 0).toInt();
@@ -65,17 +76,27 @@ class ExamListScreen extends StatelessWidget {
               }
 
               return Container(
+                key: ValueKey(id), 
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05), 
+                      blurRadius: 10, 
+                      offset: const Offset(0, 4)
+                    )
                   ],
                 ),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  // FIX: Removed 'const' here because index is dynamic
+                  leading: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_indicator_rounded, color: Color(0xFF94A3B8)),
+                  ),
                   title: Text(title, 
                       style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, fontFamily: 'Inter', color: Color(0xFF1E293B))),
                   subtitle: Column(
@@ -93,9 +114,6 @@ class ExamListScreen extends StatelessWidget {
                           _buildBadge('$actualQuestionCount Questions', brandBlue),
                           _buildBadge('$totalPoints Points', Colors.blueGrey),
                           if (allowUpload) _buildBadge('UPLOADS ON', Colors.teal),
-                          if (shuffleQ) _buildBadge('SHUFFLE Q', Colors.blueGrey),
-                          if (shuffleOpt) _buildBadge('SHUFFLE OPT', Colors.indigo),
-                          if (isManual) _buildBadge('MANUAL', Colors.purple),
                         ],
                       ),
                     ],
@@ -112,20 +130,6 @@ class ExamListScreen extends StatelessWidget {
                         child: _MenuLabel(
                           allowUpload ? Icons.no_photography_rounded : Icons.add_a_photo_rounded, 
                           allowUpload ? 'Disable Image Upload' : 'Enable Image Upload'
-                        )
-                      ),
-                      PopupMenuItem(
-                        value: 'toggle_shuffle_q', 
-                        child: _MenuLabel(
-                          shuffleQ ? Icons.shuffle_on_rounded : Icons.shuffle_rounded, 
-                          shuffleQ ? 'Disable Q-Shuffle' : 'Enable Q-Shuffle'
-                        )
-                      ),
-                      PopupMenuItem(
-                        value: 'toggle_shuffle_opt', 
-                        child: _MenuLabel(
-                          shuffleOpt ? Icons.format_list_numbered_rounded : Icons.low_priority_rounded, 
-                          shuffleOpt ? 'Disable Opt-Shuffle' : 'Enable Opt-Shuffle'
                         )
                       ),
                       PopupMenuItem(
@@ -156,8 +160,6 @@ class ExamListScreen extends StatelessWidget {
     );
   }
 
-  // --- Helper UI Widgets ---
-
   Widget _buildBadge(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -179,9 +181,6 @@ class ExamListScreen extends StatelessWidget {
           const SizedBox(height: 24),
           const Text("No Exams Created Yet", 
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF64748B), fontFamily: 'Inter')),
-          const SizedBox(height: 8),
-          const Text("Start by building your first tournament exam.", 
-            style: TextStyle(fontSize: 14, color: Colors.blueGrey)),
           const SizedBox(height: 32),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7), foregroundColor: Colors.white),
@@ -192,8 +191,6 @@ class ExamListScreen extends StatelessWidget {
       ),
     );
   }
-
-  // --- Logic Handlers ---
 
   void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt, [bool allowUpload = false]) {
     final ref = FirebaseDatabase.instance.ref('exams/$id');
@@ -209,12 +206,6 @@ class ExamListScreen extends StatelessWidget {
       case 'toggle_upload':
         ref.update({'allowStudentUpload': !allowUpload});
         break;
-      case 'toggle_shuffle_q':
-        ref.update({'shuffleQuestions': !shuffleQ});
-        break;
-      case 'toggle_shuffle_opt':
-        ref.update({'shuffleOptions': !shuffleOpt});
-        break;
       case 'toggle_status':
         ref.update({'status': isPublished ? 'draft' : 'published'});
         break;
@@ -229,13 +220,13 @@ class ExamListScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Exam?', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete "$title"? All associated data and questions will be permanently removed.'),
+        content: Text('Are you sure you want to delete "$title"?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('DELETE PERMANENTLY', style: TextStyle(color: Colors.white)),
+            child: const Text('DELETE', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
