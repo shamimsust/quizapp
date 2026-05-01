@@ -178,6 +178,7 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     final String examId = attempt['examId'] ?? '';
     final remarkController = TextEditingController(text: attempt['remarks'] ?? '');
     
+    // 1. Move this outside the builder to persist across rebuilds
     final Map<String, TextEditingController> scoreControllers = {};
 
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
@@ -191,16 +192,28 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     final Map originalQuestions = (results[0].value as Map?) ?? {};
     final Map studentAnswers = (results[1].value as Map?) ?? {};
 
+    // 2. PRE-INITIALIZE ALL CONTROLLERS HERE (Before the Modal builds)
+    studentAnswers.forEach((qId, data) {
+      final studentData = Map<String, dynamic>.from(data as Map);
+      scoreControllers[qId.toString()] = TextEditingController(
+        text: (studentData['manualPoints'] ?? studentData['autoPoints'] ?? '0').toString()
+      );
+    });
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.9,
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 20, right: 20, top: 20),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24, 
+          left: 20, right: 20, top: 20
+        ),
         child: Column(
           children: [
+            // ... (Your existing Header UI)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -224,18 +237,17 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
                       final studentData = Map<String, dynamic>.from(entry.value as Map);
                       final questionObj = originalQuestions[qId];
                       
-                      // Initialize controller
-                      scoreControllers[qId] = TextEditingController(
-                        text: (studentData['manualPoints'] ?? studentData['autoPoints'] ?? '0').toString()
-                      );
+                      // 3. DO NOT create controllers here anymore. 
+                      // Just retrieve the one we created above.
+                      final controller = scoreControllers[qId] ?? TextEditingController(text: '0');
 
                       return _buildAnswerGradingCard(
                         stem: questionObj?['stem'] ?? "Question missing", 
                         questionImageUrl: questionObj?['imageUrl'],
-                        answerImageUrl: studentData['answerImageUrl'], // Added for student uploads
+                        answerImageUrl: studentData['answerImageUrl'],
                         response: studentData['text'] ?? (studentData['selected']?.toString() ?? "N/A"), 
                         type: studentData['type'] ?? 'written',
-                        controller: scoreControllers[qId]!,
+                        controller: controller, // Use the persisted controller
                       );
                     }),
                     const SizedBox(height: 20),

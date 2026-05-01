@@ -59,21 +59,18 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
   // --- IMGBB UPLOAD LOGIC ---
   Future<void> _pickAndUploadImage() async {
-    // 1. Trigger the picker as the absolute first step (User Gesture Requirement)
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(
       source: ImageSource.gallery, 
-      maxWidth: 1024,      // Limits width to 1024px (Perfect for mobile/web)
-      maxHeight: 1024,     // Limits height
+      maxWidth: 1024,
+      maxHeight: 1024,
       imageQuality: 50,
     );
 
     if (image == null) return;
 
-    // 2. Start UI loading after the picker returns
     setState(() => _isUploading = true);
     try {
-      // 3. Use readAsBytes() (Compatible with Web/Mobile) instead of File(image.path)
       final Uint8List bytes = await image.readAsBytes(); 
       final String base64Image = base64Encode(bytes);
       
@@ -117,10 +114,19 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
 
+        // UPDATED: Check for pipes. No pipe = Info/Stem Block
+        final bool hasPipes = trimmed.contains('|');
         final parts = trimmed.split('|').map((e) => e.trim()).toList();
         final Map<String, dynamic> qData = {'order': baseOrder++};
 
-        if (parts.length >= 7) {
+        if (!hasPipes) {
+          // Rule: No | used = info_block
+          qData.addAll({
+            'type': 'info_block',
+            'stem': trimmed,
+            'marks': 0,
+          });
+        } else if (parts.length >= 7) {
           qData.addAll({
             'type': 'mcq_single',
             'stem': parts[0],
@@ -133,15 +139,19 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             'correctOptions': [parts[5].toUpperCase()],
             'marks': int.tryParse(parts[6]) ?? 1,
           });
-        }
-        else if (parts.length >= 2) {
+        } else if (parts.length >= 2) {
           qData.addAll({
             'type': 'written',
             'stem': parts[0],
             'marks': int.tryParse(parts[1]) ?? 5,
           });
         } else {
-          continue; 
+          // Single word with a pipe but no mark? Treat as written with default mark 1
+          qData.addAll({
+            'type': 'written',
+            'stem': parts[0],
+            'marks': 1,
+          });
         }
 
         await ref.push().set(qData);
@@ -179,7 +189,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             const Text(
-                "MCQ: Question | A | B | C | D | Ans | Marks\nWritten: Question | Marks",
+                "MCQ: Stem | A | B | C | D | Ans | Marks\nWritten: Question | Marks\nInfo: Just type text without any | pipes",
                 style: TextStyle(fontSize: 11, color: Colors.grey)),
             const SizedBox(height: 12),
             TextField(
@@ -373,24 +383,38 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           itemBuilder: (context, index) {
             final e = list[index];
             final q = Map<String, dynamic>.from(e.value as Map);
+            final bool isInfo = q['type'] == 'info_block';
+
+            // Logic: Count actual questions (non-info blocks) before this index
+            int qNumber = 0;
+            if (!isInfo) {
+              qNumber = list
+                  .take(index + 1)
+                  .where((item) => item.value['type'] != 'info_block')
+                  .length;
+            }
+
             return ReorderableDelayedDragStartListener(
               key: ValueKey(e.key),
               index: index,
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isInfo ? brandBlue.withValues(alpha: 0.02) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0))),
+                    border: Border.all(color: isInfo ? brandBlue.withValues(alpha: 0.2) : const Color(0xFFE2E8F0))),
                 child: ListTile(
-                  leading: q['imageUrl'] != null
-                      ? const Icon(Icons.image, color: Colors.blue)
-                      : const Icon(Icons.help_outline),
+                  leading: Text(
+                    isInfo ? "ℹ️" : "$qNumber.",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
                   title: Text(q['stem'] ?? '',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                      style: TextStyle(
+                          fontSize: 13, 
+                          fontWeight: isInfo ? FontWeight.normal : FontWeight.w600,
+                          fontStyle: isInfo ? FontStyle.italic : FontStyle.normal)),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     IconButton(
                         icon: const Icon(Icons.copy_rounded, size: 18),
@@ -427,7 +451,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         children: [
           _buildLabel('CONTENT TYPE'),
           DropdownButtonFormField<String>(
-            initialValue: _type,
+            value: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() {
               _type = v!;

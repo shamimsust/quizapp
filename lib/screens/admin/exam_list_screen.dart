@@ -46,11 +46,23 @@ class ExamListScreen extends StatelessWidget {
               final bool isManual = val['isManualGrading'] ?? false;
               final bool shuffleQ = val['shuffleQuestions'] ?? false;
               final bool shuffleOpt = val['shuffleOptions'] ?? false;
-              final bool allowUpload = val['allowStudentUpload'] ?? false; // New field
+              final bool allowUpload = val['allowStudentUpload'] ?? false;
               
-              final questionCount = val['questions'] != null 
-                  ? (val['questions'] as Map).length 
-                  : 0;
+              // UPDATED LOGIC: Calculate actual question count and total points
+              int actualQuestionCount = 0;
+              int totalPoints = 0;
+              
+              if (val['questions'] != null) {
+                final questionsMap = Map<String, dynamic>.from(val['questions'] as Map);
+                for (var q in questionsMap.values) {
+                  final qData = Map<String, dynamic>.from(q as Map);
+                  // Only count if it's not an info_block
+                  if (qData['type'] != 'info_block') {
+                    actualQuestionCount++;
+                    totalPoints += (qData['marks'] as num? ?? 0).toInt();
+                  }
+                }
+              }
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -78,8 +90,9 @@ class ExamListScreen extends StatelessWidget {
                             isPublished ? 'PUBLISHED' : 'DRAFT', 
                             isPublished ? Colors.green : Colors.orange
                           ),
-                          _buildBadge('$questionCount Qs', brandBlue),
-                          if (allowUpload) _buildBadge('UPLOADS ON', Colors.teal), // New Badge
+                          _buildBadge('$actualQuestionCount Questions', brandBlue),
+                          _buildBadge('$totalPoints Points', Colors.blueGrey),
+                          if (allowUpload) _buildBadge('UPLOADS ON', Colors.teal),
                           if (shuffleQ) _buildBadge('SHUFFLE Q', Colors.blueGrey),
                           if (shuffleOpt) _buildBadge('SHUFFLE OPT', Colors.indigo),
                           if (isManual) _buildBadge('MANUAL', Colors.purple),
