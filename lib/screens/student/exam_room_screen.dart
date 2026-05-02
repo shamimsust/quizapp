@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform; // Added for platform checks
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb; // Added for web check
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_windowmanager/flutter_windowmanager.dart'; // Added security plugin
 import '../../widgets/latex_text.dart';
 
 class ExamRoomScreen extends StatefulWidget {
@@ -17,13 +20,13 @@ class ExamRoomScreen extends StatefulWidget {
   State<ExamRoomScreen> createState() => _ExamRoomScreenState();
 }
 
-class _ExamRoomScreenState extends State<ExamRoomScreen> {
+class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObserver {
   final _db = FirebaseDatabase.instance.ref();
   final String _imgBBKey = "bd9c2f7a1ff71a3e72aead970348d485";
 
   Map<String, dynamic>? attempt;
   List<Map<String, dynamic>> questions = [];
-  bool _allowStudentUpload = false; // New state variable
+  bool _allowStudentUpload = false;
 
   final Map<String, List<String>> _selected = {};
   final Map<String, TextEditingController> _controllers = {};
@@ -37,11 +40,124 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
   DateTime? _lastSynced;
   StreamSubscription<DatabaseEvent>? _connectionSubscription;
 
+  // --- ANTI-CHEAT CONFIGURATION ---
+  int _tabSwitchStrikes = 0;
+  final int _maxAllowedSwitches = 3; 
+
   @override
   void initState() {
     super.initState();
+    _enableSecurity(); // Initialize screen protection
+    WidgetsBinding.instance.addObserver(this); 
     _load();
     _setupConnectionListener();
+  }
+
+  // Prevents screenshots, screen recording, and "Circle to Search" on Android
+  Future<void> _enableSecurity() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      } catch (e) {
+        debugPrint("Security flags failed: $e");
+      }
+    }
+  }
+
+  // Disable protection when leaving the screen
+  Future<void> _disableSecurity() async {
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await FlutterWindowManager.clearFlags(FlutterWindowManager.FLAG_SECURE);
+      } catch (e) {
+        debugPrint("Security clear failed: $e");
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _disableSecurity(); // Important: cleanup security flags
+    WidgetsBinding.instance.removeObserver(this);
+    _connectionSubscription?.cancel();
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Detects app minimizing, split screen, or recent apps view
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _handleTabSwitch();
+    }
+  }
+
+  void _handleTabSwitch() {
+    if (_submitting) return; 
+    
+    setState(() => _tabSwitchStrikes++);
+    
+    _db.child('attempts/${widget.attemptId}/cheatingLogs').push().set({
+      'type': 'tab_switch',
+      'timestamp': ServerValue.timestamp,
+      'strikeNumber': _tabSwitchStrikes,
+    });
+
+    if (_tabSwitchStrikes >= _maxAllowedSwitches) {
+      _forceSubmitDueToCheating();
+    } else {
+      _showCheatingWarning();
+    }
+  }
+
+  void _forceSubmitDueToCheating() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Maximum tab switches exceeded. Submitting automatically."),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 5),
+      ),
+    );
+    
+    _submit(); 
+  }
+
+  void _showCheatingWarning() {
+    int remaining = _maxAllowedSwitches - _tabSwitchStrikes;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Prohibited Action'),
+          ],
+        ),
+        content: Text(
+          'Switching apps or screenshots are not allowed.\n\n'
+          'Strikes: $_tabSwitchStrikes / $_maxAllowedSwitches\n'
+          'Remaining chances: $remaining\n\n'
+          'Exceeding this will submit your exam automatically.',
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('I UNDERSTAND', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _setupConnectionListener() {
@@ -52,15 +168,6 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
         setState(() => _isConnected = connected);
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _connectionSubscription?.cancel();
-    for (final controller in _controllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -78,8 +185,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
 
       final bool shuffleQ = examMeta['shuffleQuestions'] ?? false;
       final bool shuffleOpt = examMeta['shuffleOptions'] ?? false;
-      final bool allowUpload =
-          examMeta['allowStudentUpload'] ?? false; // Fetch the toggle
+      final bool allowUpload = examMeta['allowStudentUpload'] ?? false;
 
       final qSnap = await _db.child('exams/$examId/questions').get();
       final List<Map<String, dynamic>> loadedQuestions = [];
@@ -126,7 +232,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
         setState(() {
           attempt = attData;
           questions = loadedQuestions;
-          _allowStudentUpload = allowUpload; // Update state
+          _allowStudentUpload = allowUpload;
           _lastSynced = DateTime.now();
         });
       }
@@ -369,8 +475,6 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                 final imageUrl = q['imageUrl'];
                 final bool isInfo = type == 'info_block';
 
-                // NEW LOGIC: Calculate the question number by counting
-                // non-info items up to this index.
                 int displayNum = 0;
                 if (!isInfo) {
                   displayNum = questions
@@ -400,7 +504,6 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Use displayNum instead of index + 1
                             if (!isInfo)
                               Text('$displayNum. ',
                                   style: const TextStyle(
@@ -424,7 +527,6 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> {
                         ],
                         if (!isInfo) const SizedBox(height: 20),
 
-                        // Only show inputs if it's not an info block
                         if (!isInfo) ...[
                           if (type == 'written') ...[
                             TextField(
@@ -616,7 +718,7 @@ class _ExamTimerState extends State<ExamTimer> {
       decoration: BoxDecoration(
           color: isUrgent
               ? Colors.red.shade50
-              : const Color(0xFF2264D7).withOpacity(0.1),
+              : const Color(0xFF2264D7).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
               color: isUrgent ? Colors.red : const Color(0xFF2264D7))),
