@@ -92,7 +92,6 @@ class ExamListScreen extends StatelessWidget {
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  // FIX: Removed 'const' here because index is dynamic
                   leading: ReorderableDragStartListener(
                     index: index,
                     child: const Icon(Icons.drag_indicator_rounded, color: Color(0xFF94A3B8)),
@@ -111,8 +110,10 @@ class ExamListScreen extends StatelessWidget {
                             isPublished ? 'PUBLISHED' : 'DRAFT', 
                             isPublished ? Colors.green : Colors.orange
                           ),
-                          _buildBadge('$actualQuestionCount Questions', brandBlue),
-                          _buildBadge('$totalPoints Points', Colors.blueGrey),
+                          _buildBadge('$actualQuestionCount Qs', brandBlue),
+                          _buildBadge('$totalPoints Pts', Colors.blueGrey),
+                          if (shuffleQ) _buildBadge('SHUFFLE Q', Colors.purple),
+                          if (shuffleOpt) _buildBadge('SHUFFLE OPT', Colors.indigo),
                           if (allowUpload) _buildBadge('UPLOADS ON', Colors.teal),
                         ],
                       ),
@@ -125,6 +126,21 @@ class ExamListScreen extends StatelessWidget {
                     itemBuilder: (context) => [
                       const PopupMenuItem(value: 'edit', child: _MenuLabel(Icons.edit_note_rounded, 'Edit Questions')),
                       const PopupMenuItem(value: 'copy_id', child: _MenuLabel(Icons.copy_rounded, 'Copy Exam ID')),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'toggle_shuffle_q', 
+                        child: _MenuLabel(
+                          shuffleQ ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded, 
+                          'Shuffle Questions'
+                        )
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle_shuffle_opt', 
+                        child: _MenuLabel(
+                          shuffleOpt ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded, 
+                          'Shuffle Options'
+                        )
+                      ),
                       PopupMenuItem(
                         value: 'toggle_upload', 
                         child: _MenuLabel(
@@ -192,7 +208,7 @@ class ExamListScreen extends StatelessWidget {
     );
   }
 
-  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt, [bool allowUpload = false]) {
+  void _handleMenuAction(BuildContext context, String action, String id, String title, bool isPublished, bool shuffleQ, bool shuffleOpt, bool allowUpload) {
     final ref = FirebaseDatabase.instance.ref('exams/$id');
     
     switch (action) {
@@ -202,6 +218,12 @@ class ExamListScreen extends StatelessWidget {
       case 'copy_id':
         Clipboard.setData(ClipboardData(text: id));
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ID copied to clipboard')));
+        break;
+      case 'toggle_shuffle_q':
+        ref.update({'shuffleQuestions': !shuffleQ});
+        break;
+      case 'toggle_shuffle_opt':
+        ref.update({'shuffleOptions': !shuffleOpt});
         break;
       case 'toggle_upload':
         ref.update({'allowStudentUpload': !allowUpload});
@@ -215,6 +237,7 @@ class ExamListScreen extends StatelessWidget {
     }
   }
 
+  // ... (Delete Dialog remains the same)
   Future<void> _confirmDeleteExam(BuildContext context, String id, String title) async {
     final bool? confirm = await showDialog<bool>(
       context: context,
