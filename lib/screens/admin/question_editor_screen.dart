@@ -57,6 +57,48 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     super.dispose();
   }
 
+  // --- BANK IMPORT LOGIC ---
+  void _showBankPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFF8FAFC),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (_, scrollController) => _BankPickerView(
+          onImport: (selectedQuestions) => _importQuestionsFromBank(selectedQuestions),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importQuestionsFromBank(List<Map<String, dynamic>> questions) async {
+    setState(() => _isSaving = true);
+    try {
+      final ref = _db.child('exams/${widget.examId}/questions');
+      int baseOrder = DateTime.now().millisecondsSinceEpoch;
+
+      for (var qData in questions) {
+        final newQ = Map<String, dynamic>.from(qData);
+        newQ['order'] = baseOrder++;
+        // Remove bank-specific metadata before saving to exam
+        newQ.remove('parentId');
+        newQ.remove('isFolder');
+        
+        await ref.push().set(newQ);
+      }
+      _showSnackBar('Imported ${questions.length} questions from bank');
+    } catch (e) {
+      _showSnackBar('Import failed', isError: true);
+    } finally {
+      setState(() => _isSaving = false);
+    }
+  }
+
   // --- IMGBB UPLOAD LOGIC ---
   Future<void> _pickAndUploadImage() async {
     final ImagePicker picker = ImagePicker();
@@ -114,13 +156,11 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         final trimmed = line.trim();
         if (trimmed.isEmpty) continue;
 
-        // UPDATED: Check for pipes. No pipe = Info/Stem Block
         final bool hasPipes = trimmed.contains('|');
         final parts = trimmed.split('|').map((e) => e.trim()).toList();
         final Map<String, dynamic> qData = {'order': baseOrder++};
 
         if (!hasPipes) {
-          // Rule: No | used = info_block
           qData.addAll({
             'type': 'info_block',
             'stem': trimmed,
@@ -146,7 +186,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             'marks': int.tryParse(parts[1]) ?? 5,
           });
         } else {
-          // Single word with a pipe but no mark? Treat as written with default mark 1
           qData.addAll({
             'type': 'written',
             'stem': parts[0],
@@ -322,6 +361,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         foregroundColor: Colors.white,
         actions: [
           IconButton(
+              icon: const Icon(Icons.account_balance_wallet_rounded),
+              onPressed: _showBankPicker,
+              tooltip: "Import from Bank"),
+          IconButton(
               icon: const Icon(Icons.ballot_outlined),
               onPressed: _showBulkModal,
               tooltip: "Bulk Import"),
@@ -380,7 +423,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                   elevation: 8,
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  shadowColor: Colors.black.withValues(alpha: 0.3),
+                  shadowColor: Colors.black.withAlpha((255 * 0.3).round()),
                   child: child,
                 );
               },
@@ -400,7 +443,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             final q = Map<String, dynamic>.from(e.value as Map);
             final bool isInfo = q['type'] == 'info_block';
 
-            // Logic: Count actual questions (non-info blocks) before this index
             int qNumber = 0;
             if (!isInfo) {
               qNumber = list
@@ -415,9 +457,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 decoration: BoxDecoration(
-                    color: isInfo ? brandBlue.withValues(alpha: 0.02) : Colors.white,
+                    color: isInfo ? brandBlue.withAlpha((255 * 0.02).round()) : Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: isInfo ? brandBlue.withValues(alpha: 0.2) : const Color(0xFFE2E8F0))),
+                    border: Border.all(color: isInfo ? brandBlue.withAlpha((255 * 0.2).round()) : const Color(0xFFE2E8F0))),
                 child: ListTile(
                   leading: Text(
                     isInfo ? "ℹ️" : "$qNumber.",
@@ -585,7 +627,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: brandBlue.withValues(alpha: 0.1))),
+            border: Border.all(color: brandBlue.withAlpha((255 * 0.1).round()))),
         child: _stemController.text.isEmpty
             ? const Text('Preview...',
                 style: TextStyle(color: Colors.grey, fontSize: 12))
@@ -646,5 +688,111 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.redAccent : Colors.green.shade600));
+  }
+}
+
+// --- SUB-WIDGET FOR BANK PICKER ---
+class _BankPickerView extends StatefulWidget {
+  final Function(List<Map<String, dynamic>>) onImport;
+  const _BankPickerView({required this.onImport});
+
+  @override
+  State<_BankPickerView> createState() => _BankPickerViewState();
+}
+
+class _BankPickerViewState extends State<_BankPickerView> {
+  final _db = FirebaseDatabase.instance.ref();
+  List<Map<String, String>> _pathStack = [{'id': 'root', 'name': 'Bank'}];
+  final Set<String> _selectedIds = {};
+  final Map<String, Map<String, dynamic>> _selectedData = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final String currentFolderId = _pathStack.last['id']!;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("PICK FROM BANK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              if (_selectedIds.isNotEmpty)
+                ElevatedButton(
+                  onPressed: () {
+                    widget.onImport(_selectedData.values.toList());
+                    Navigator.pop(context);
+                  },
+                  child: Text("IMPORT (${_selectedIds.length})"),
+                )
+              else
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+            ],
+          ),
+        ),
+        _buildBreadcrumbs(),
+        Expanded(
+          child: StreamBuilder<DatabaseEvent>(
+            stream: _db.child('questionBank').orderByChild('parentId').equalTo(currentFolderId).onValue,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
+                return const Center(child: Text("Folder is empty"));
+              }
+              final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
+              final items = data.entries.toList();
+
+              return ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (ctx, i) {
+                  final id = items[i].key;
+                  final val = Map<String, dynamic>.from(items[i].value);
+                  final isFolder = val['isFolder'] == true;
+
+                  return ListTile(
+                    leading: Icon(isFolder ? Icons.folder_rounded : Icons.description_outlined, 
+                        color: isFolder ? Colors.amber : Colors.blue),
+                    title: Text(val['name'] ?? val['stem'] ?? 'Untitled'),
+                    trailing: isFolder ? const Icon(Icons.chevron_right) : Checkbox(
+                      value: _selectedIds.contains(id),
+                      onChanged: (v) {
+                        setState(() {
+                          if (v!) {
+                            _selectedIds.add(id);
+                            _selectedData[id] = val;
+                          } else {
+                            _selectedIds.remove(id);
+                            _selectedData.remove(id);
+                          }
+                        });
+                      },
+                    ),
+                    onTap: isFolder ? () => setState(() => _pathStack.add({'id': id, 'name': val['name']})) : null,
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBreadcrumbs() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: _pathStack.asMap().entries.map((e) => InkWell(
+          onTap: () => setState(() => _pathStack = _pathStack.sublist(0, e.key + 1)),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(e.value['name']!.toUpperCase(), style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.bold, color: e.key == _pathStack.length - 1 ? Colors.black : Colors.blue
+            )),
+          ),
+        )).toList(),
+      ),
+    );
   }
 }

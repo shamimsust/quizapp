@@ -39,6 +39,13 @@ class AdminDashboardScreen extends StatelessWidget {
           _buildSectionHeader('EXAM MANAGEMENT'),
           const SizedBox(height: 16),
           _DashboardTile(
+            title: 'Question Bank',
+            subtitle: 'Organize library with folders and subfolders',
+            icon: Icons.folder_copy_rounded,
+            color: Colors.indigo.shade700,
+            onTap: () => context.push('/admin/question-bank'),
+          ),
+          _DashboardTile(
             title: 'Manage Exams',
             subtitle: 'Edit metadata, questions, and publish status',
             icon: Icons.inventory_2_rounded,
