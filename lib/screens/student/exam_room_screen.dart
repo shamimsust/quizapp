@@ -129,7 +129,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   }
 
   void _showCheatingWarning() {
-    int remaining = _maxAllowedSwitches - _tabSwitchStrikes;
+    final int remaining = _maxAllowedSwitches - _tabSwitchStrikes;
 
     showDialog(
       context: context,
@@ -217,15 +217,20 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
       final ansSnap =
           await _db.child('attemptAnswers/${widget.attemptId}').get();
       if (ansSnap.exists) {
-        final existing = Map<dynamic, dynamic>.from(ansSnap.value as Map);
-        existing.forEach((qid, data) {
-          if (data['selected'] != null)
-            _selected[qid] = List<String>.from(data['selected']);
-          if (data['text'] != null)
-            _controllers[qid] = TextEditingController(text: data['text']);
-          if (data['answerImageUrl'] != null)
-            _writtenImages[qid] = data['answerImageUrl'];
-        });
+        final existing = Map<String, dynamic>.from(ansSnap.value as Map);
+        for (final entry in existing.entries) {
+          final qid = entry.key;
+          final qData = Map<String, dynamic>.from(entry.value as Map);
+          if (qData['selected'] != null) {
+            _selected[qid] = List<String>.from(qData['selected']);
+          }
+          if (qData['text'] != null) {
+            _controllers[qid] = TextEditingController(text: qData['text']);
+          }
+          if (qData['answerImageUrl'] != null) {
+            _writtenImages[qid] = qData['answerImageUrl'];
+          }
+        }
       }
 
       if (mounted) {
@@ -328,13 +333,13 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
 
       final ansSnap =
           await _db.child('attemptAnswers/${widget.attemptId}').get();
-      final userAnswers = (ansSnap.value as Map?) ?? {};
+      final userAnswers = Map<String, dynamic>.from(ansSnap.value as Map? ?? {});
 
       for (final q in questions) {
         final qid = q['id'];
         final type = q['type'] ?? 'mcq_single';
         if (type == 'info_block') continue;
-        final int qMarks = q['marks'] ?? 1;
+        final int qMarks = (q['marks'] as num?)?.toInt() ?? 1;
         totalPossible += qMarks;
 
         if (type == 'written') {
@@ -342,8 +347,8 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
         } else {
           final List correct = q['correctOptions'] ?? [];
           final userEntry = userAnswers[qid];
-          final List selected =
-              (userEntry != null) ? (userEntry['selected'] ?? []) : [];
+          final List selected = (userEntry is Map)
+              ? (userEntry['selected'] as List? ?? []) : [];
           final bool isCorrect = selected.length == correct.length &&
               selected.every((e) => correct.contains(e));
           if (isCorrect) obtainedScore += qMarks;
@@ -397,10 +402,12 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null)
+    if (_error != null) {
       return Scaffold(body: Center(child: Text("Error: $_error")));
-    if (attempt == null)
+    }
+    if (attempt == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     final endTime = attempt!['endTime'] as int? ?? 0;
     const Color brandBlue = Color(0xFF2264D7);
@@ -411,8 +418,10 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: const Text('Live Quiz',
-            style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Live Quiz',
+          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold),
+        ),
         backgroundColor: brandBlue,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -433,9 +442,11 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
                               : Colors.orangeAccent,
                           shape: BoxShape.circle)),
                   const SizedBox(width: 6),
-                  Text(_isConnected ? "Synced" : "Offline",
-                      style: const TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(
+                    _isConnected ? "Synced" : "Offline",
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
                 ]),
                 Text("Last: $syncTime",
                     style: TextStyle(
@@ -475,13 +486,12 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
                 final imageUrl = q['imageUrl'];
                 final bool isInfo = type == 'info_block';
 
-                int displayNum = 0;
-                if (!isInfo) {
-                  displayNum = questions
-                      .take(index + 1)
-                      .where((item) => item['type'] != 'info_block')
-                      .length;
-                }
+                final int displayNum = isInfo
+                    ? 0
+                    : questions
+                        .take(index + 1)
+                        .where((item) => item['type'] != 'info_block')
+                        .length;
 
                 return Card(
                   elevation: 0,
