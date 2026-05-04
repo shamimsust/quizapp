@@ -31,8 +31,8 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Token Manager', 
-          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('TOKEN MANAGER', 
+          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.2)),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -53,7 +53,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('CREATE ENTRY TOKEN', 
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF64748B), letterSpacing: 1.1)),
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF64748B), letterSpacing: 1.1)),
                   const SizedBox(height: 16),
                   StreamBuilder<DatabaseEvent>(
                     stream: _db.child('exams').onValue,
@@ -65,7 +65,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                       final examsMap = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
                       
                       return DropdownButtonFormField<String>(
-                        initialValue: _selectedExamId,
+                        value: _selectedExamId,
                         isExpanded: true,
                         decoration: InputDecoration(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -81,7 +81,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                             value: e.key as String,
                             child: Row(
                               children: [
-                                Expanded(child: Text(data['title'] ?? 'Untitled', overflow: TextOverflow.ellipsis)),
+                                Expanded(child: Text(data['title'] ?? 'Untitled', overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14))),
                                 if (isDraft)
                                   _buildSmallBadge('DRAFT', Colors.orange)
                                 else
@@ -123,7 +123,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
               controller: _searchController,
               onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
               decoration: InputDecoration(
-                hintText: "Search tokens or Exam IDs...",
+                hintText: "Search tokens or exam titles...",
                 hintStyle: const TextStyle(fontSize: 14),
                 prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B)),
                 filled: true,
@@ -143,24 +143,32 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
 
           const SizedBox(height: 20),
 
-          // --- LIST SECTION ---
+          // --- LIST SECTION WITH LOOKUP ---
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
-              stream: _db.child('examTokens').onValue,
+              stream: _db.onValue, // Listening to root for cross-node mapping
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-                  return _buildEmptyState();
-                }
+                if (!snapshot.hasData || snapshot.data!.snapshot.value == null) return _buildEmptyState();
 
-                final data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
-                var tokenEntries = data.entries.toList();
+                final rootData = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+                
+                if (rootData['examTokens'] == null) return _buildEmptyState();
+                
+                final tokensMap = Map<dynamic, dynamic>.from(rootData['examTokens'] as Map);
+                final examsMap = rootData['exams'] != null 
+                    ? Map<dynamic, dynamic>.from(rootData['exams'] as Map) 
+                    : {};
 
+                var tokenEntries = tokensMap.entries.toList();
+
+                // Apply dynamic search across code and mapped title
                 if (_searchQuery.isNotEmpty) {
                   tokenEntries = tokenEntries.where((e) {
                     final code = e.key.toString().toLowerCase();
-                    final examId = (e.value as Map)['examId']?.toString().toLowerCase() ?? "";
-                    return code.contains(_searchQuery) || examId.contains(_searchQuery);
+                    final String eId = (e.value as Map)['examId'] ?? "";
+                    final String eTitle = examsMap[eId]?['title']?.toString().toLowerCase() ?? "";
+                    return code.contains(_searchQuery) || eTitle.contains(_searchQuery);
                   }).toList();
                 }
 
@@ -171,6 +179,9 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                     final code = tokenEntries[index].key.toString();
                     final tData = Map<dynamic, dynamic>.from(tokenEntries[index].value as Map);
                     final String examId = tData['examId'] ?? 'N/A';
+                    
+                    // Lookup Exam Title
+                    final String examTitle = examsMap[examId]?['title'] ?? "Unknown Exam";
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -180,13 +191,29 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                         border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: ListTile(
-                        title: Text(code, style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Color(0xFF0F172A))),
-                        subtitle: Row(
-                          children: [
-                            const Icon(Icons.link_rounded, size: 14, color: Color(0xFF64748B)),
-                            const SizedBox(width: 4),
-                            Expanded(child: Text(examId, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis)),
-                          ],
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        title: Text(code, 
+                          style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2, color: Color(0xFF0F172A), fontSize: 18)),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.assignment_outlined, size: 14, color: Color(0xFF2264D7)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(examTitle, 
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155)), 
+                                      overflow: TextOverflow.ellipsis),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text("ID: $examId", style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                            ],
+                          ),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -220,7 +247,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: color.withValues(alpha:0.1), borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
       child: Text(text, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold)),
     );
   }
@@ -255,8 +282,8 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Delete Token?"),
-        content: Text("Access code '$code' will be permanently revoked."),
+        title: const Text("Revoke Access?"),
+        content: Text("Token '$code' will be deleted. Students with this code will lose access."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(
