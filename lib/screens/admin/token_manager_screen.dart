@@ -52,7 +52,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                 }
                 
                 if (snapshot.hasError) {
-                  return Center(child: Text("Error: Access Denied"));
+                  return const Center(child: Text("Error: Access Denied"));
                 }
 
                 if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
@@ -126,7 +126,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                 }
                 final Map exams = snapshot.data!.snapshot.value as Map;
                 return DropdownButtonFormField<String>(
-                  value: _selectedExamId,
+                  initialValue: _selectedExamId,
                   isExpanded: true,
                   decoration: InputDecoration(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -183,7 +183,7 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: isPublished ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+        color: isPublished ? Colors.green.withValues(alpha: 0.25) : Colors.orange.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(

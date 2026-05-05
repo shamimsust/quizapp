@@ -512,7 +512,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         children: [
           _buildLabel('CONTENT TYPE'),
           DropdownButtonFormField<String>(
-            value: _type,
+            initialValue: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() {
               _type = v!;

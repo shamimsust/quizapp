@@ -179,7 +179,7 @@ class _BankQuestionEditorScreenState extends State<BankQuestionEditorScreen> {
 
   Widget _buildDropdown() {
     return DropdownButtonFormField<String>(
-      value: _type,
+      initialValue: _type,
       decoration: _inputDecoration('Type'),
       items: const [
         DropdownMenuItem(value: 'mcq_single', child: Text('MCQ (Single)')),
