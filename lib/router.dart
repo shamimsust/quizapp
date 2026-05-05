@@ -12,6 +12,9 @@ import 'screens/admin/question_editor_screen.dart';
 import 'screens/admin/manual_grading_screen.dart';
 import 'screens/admin/exam_list_screen.dart'; 
 import 'screens/admin/leaderboard_screen.dart'; 
+import 'screens/admin/question_bank_screen.dart';
+// Import the new Bank Editor Screen
+import 'screens/admin/bank_question_editor_screen.dart'; 
 
 // Student Screens
 import 'screens/student/token_landing_screen.dart';
@@ -60,19 +63,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 3. Security Redirection & Path Guarding
       if (goingAdmin) {
-        // ALLOW everyone to see the sign-in page regardless of session
         if (onAdminLogin) return null;
-
-        // If trying to access admin screens without a session
-        if (user == null) {
-          return '/admin/signin';
-        }
-
-        // If logged in but NOT an admin (e.g. Anonymous Student session)
-        // This ensures the "Admin Login" button actually navigates
-        if (role != 'admin') {
-          return '/admin/signin';
-        }
+        if (user == null) return '/admin/signin';
+        if (role != 'admin') return '/admin/signin';
       }
 
       return null;
@@ -100,6 +93,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       // --- ADMIN ROUTES ---
       GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/signin', builder: (_, __) => const AdminSignInScreen()),
+      GoRoute(path: '/admin/question-bank', builder: (_, __) => const QuestionBankScreen()),
+      
+      // NEW: Bank Question Editor Route (Fixes the GoException)
+      GoRoute(
+        path: '/admin/exam-builder/:id',
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final bankParent = state.uri.queryParameters['bankParent'];
+          return BankQuestionEditorScreen(
+            questionId: id == 'new' ? null : id,
+            parentId: bankParent ?? 'root',
+          );
+        },
+      ),
+
       GoRoute(path: '/admin/exam-builder', builder: (_, __) => const ExamBuilderScreen()),
       GoRoute(path: '/admin/token-manager', builder: (_, __) => const TokenManagerScreen()),
       GoRoute(path: '/admin/exam-list', builder: (_, __) => const ExamListScreen()),

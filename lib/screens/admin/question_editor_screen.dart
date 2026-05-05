@@ -88,6 +88,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         // Remove bank-specific metadata before saving to exam
         newQ.remove('parentId');
         newQ.remove('isFolder');
+        newQ.remove('name'); // Remove folder-name if it exists
         
         await ref.push().set(newQ);
       }
@@ -404,7 +405,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
           return const SliverToBoxAdapter(
-              child: Center(child: Text("No content yet")));
+              child: Center(child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Text("No content yet"),
+              )));
         }
         final Map rawData = snapshot.data!.snapshot.value as Map;
         final list = rawData.entries
@@ -508,7 +512,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         children: [
           _buildLabel('CONTENT TYPE'),
           DropdownButtonFormField<String>(
-            initialValue: _type,
+            value: _type,
             decoration: _inputDecoration('Type'),
             onChanged: (v) => setState(() {
               _type = v!;
@@ -720,11 +724,12 @@ class _BankPickerViewState extends State<_BankPickerView> {
               const Text("PICK FROM BANK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               if (_selectedIds.isNotEmpty)
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2264D7)),
                   onPressed: () {
                     widget.onImport(_selectedData.values.toList());
                     Navigator.pop(context);
                   },
-                  child: Text("IMPORT (${_selectedIds.length})"),
+                  child: Text("IMPORT (${_selectedIds.length})", style: const TextStyle(color: Colors.white)),
                 )
               else
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
@@ -736,13 +741,19 @@ class _BankPickerViewState extends State<_BankPickerView> {
           child: StreamBuilder<DatabaseEvent>(
             stream: _db.child('questionBank').orderByChild('parentId').equalTo(currentFolderId).onValue,
             builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
               if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
                 return const Center(child: Text("Folder is empty"));
               }
+
               final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
               final items = data.entries.toList();
 
               return ListView.builder(
+                padding: const EdgeInsets.only(bottom: 20),
                 itemCount: items.length,
                 itemBuilder: (ctx, i) {
                   final id = items[i].key;
@@ -750,10 +761,12 @@ class _BankPickerViewState extends State<_BankPickerView> {
                   final isFolder = val['isFolder'] == true;
 
                   return ListTile(
-                    leading: Icon(isFolder ? Icons.folder_rounded : Icons.description_outlined, 
-                        color: isFolder ? Colors.amber : Colors.blue),
+                    leading: Icon(isFolder ? Icons.folder_rounded : Icons.functions_rounded, 
+                        color: isFolder ? Colors.amber : const Color(0xFF2264D7)),
                     title: Text(val['name'] ?? val['stem'] ?? 'Untitled'),
+                    subtitle: isFolder ? null : Text("${val['type']?.toString().toUpperCase()}"),
                     trailing: isFolder ? const Icon(Icons.chevron_right) : Checkbox(
+                      activeColor: const Color(0xFF2264D7),
                       value: _selectedIds.contains(id),
                       onChanged: (v) {
                         setState(() {
@@ -779,19 +792,36 @@ class _BankPickerViewState extends State<_BankPickerView> {
   }
 
   Widget _buildBreadcrumbs() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: _pathStack.asMap().entries.map((e) => InkWell(
-          onTap: () => setState(() => _pathStack = _pathStack.sublist(0, e.key + 1)),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(e.value['name']!.toUpperCase(), style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: e.key == _pathStack.length - 1 ? Colors.black : Colors.blue
-            )),
-          ),
-        )).toList(),
+    return Container(
+      height: 40,
+      width: double.infinity,
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: _pathStack.asMap().entries.map((e) => InkWell(
+            onTap: () {
+              if (e.key != _pathStack.length - 1) {
+                setState(() => _pathStack = _pathStack.sublist(0, e.key + 1));
+              }
+            },
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: Text(e.value['name']!.toUpperCase(), style: TextStyle(
+                    fontSize: 10, 
+                    fontWeight: FontWeight.w900, 
+                    color: e.key == _pathStack.length - 1 ? Colors.black : const Color(0xFF2264D7),
+                    letterSpacing: 1.1
+                  )),
+                ),
+                if (e.key != _pathStack.length - 1) const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
+              ],
+            ),
+          )).toList(),
+        ),
       ),
     );
   }

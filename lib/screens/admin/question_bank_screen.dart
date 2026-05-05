@@ -24,7 +24,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('QUESTION BANK', 
+        title: const Text('MATH QUESTION BANK', 
           style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.2)),
         backgroundColor: primaryBlue,
         foregroundColor: Colors.white,
@@ -42,7 +42,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
           _buildBreadcrumbs(),
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
-              // Query items where parentId matches the current folder
               stream: _db.child('questionBank').orderByChild('parentId').equalTo(_currentFolderId).onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -77,7 +76,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                       const SizedBox(height: 20),
                     ],
                     if (questions.isNotEmpty) ...[
-                      _buildSectionLabel("QUESTIONS"),
+                      _buildSectionLabel("MATH QUESTIONS"),
                       ...questions.map((q) => _buildQuestionTile(q.key, q.value)),
                     ],
                   ],
@@ -134,7 +133,14 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
       child: ListTile(
         leading: const Icon(Icons.folder_rounded, color: Colors.amber),
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, size: 20, color: Colors.grey),
+          onSelected: (val) => _handleFolderAction(val, id, name),
+          itemBuilder: (ctx) => [
+            const PopupMenuItem(value: 'rename', child: Text('Rename')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
+          ],
+        ),
         onTap: () {
           setState(() => _pathStack.add({'id': id, 'name': name}));
         },
@@ -148,10 +154,11 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFE2E8F0))),
       child: ListTile(
-        leading: const Icon(Icons.description_outlined, color: Color(0xFF2264D7)),
-        title: Text(data['stem'] ?? 'Untitled Question', maxLines: 1, overflow: TextOverflow.ellipsis, 
+        leading: const Icon(Icons.functions_rounded, color: Color(0xFF2264D7)),
+        title: Text(data['stem'] ?? 'Untitled Math Question', maxLines: 1, overflow: TextOverflow.ellipsis, 
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-        subtitle: Text("${data['type']?.toUpperCase()} • ${data['marks']} Points", style: const TextStyle(fontSize: 11)),
+        subtitle: Text("${data['type']?.toUpperCase().replaceAll('_', ' ')} • ${data['marks']} Marks", style: const TextStyle(fontSize: 11)),
+        onTap: () => context.push('/admin/exam-builder/$id?bankParent=$_currentFolderId'),
         trailing: PopupMenuButton(
           itemBuilder: (ctx) => [
             const PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -198,6 +205,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
         FloatingActionButton(
           heroTag: 'addQuestion',
           backgroundColor: color,
+          // Navigate to editor with 'new' ID and current folder as parent
           onPressed: () => context.push('/admin/exam-builder/new?bankParent=$_currentFolderId'),
           child: const Icon(Icons.add_rounded, color: Colors.white),
         ),
@@ -235,8 +243,65 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     );
   }
 
+  void _handleFolderAction(String action, String id, String currentName) {
+    if (action == 'rename') {
+      _showRenameFolderDialog(id, currentName);
+    } else if (action == 'delete') {
+      _confirmDeleteFolder(id, currentName);
+    }
+  }
+
+  Future<void> _showRenameFolderDialog(String id, String currentName) async {
+    final controller = TextEditingController(text: currentName);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Folder'),
+        content: TextField(
+          controller: controller, 
+          decoration: const InputDecoration(hintText: 'New Folder Name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.isNotEmpty && controller.text != currentName) {
+                _db.child('questionBank/$id').update({'name': controller.text});
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('UPDATE'),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteFolder(String id, String name) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Folder?'),
+        content: Text('Are you sure you want to delete "$name"? Questions inside will need to be re-assigned.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () {
+              _db.child('questionBank/$id').remove();
+              Navigator.pop(ctx);
+            },
+            child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleQuestionAction(String action, String id, Map data) {
-    if (action == 'delete') {
+    if (action == 'edit') {
+       context.push('/admin/exam-builder/$id?bankParent=$_currentFolderId');
+    } else if (action == 'delete') {
        _db.child('questionBank/$id').remove();
     } else if (action == 'copy') {
       final newData = Map<String, dynamic>.from(data);
@@ -246,8 +311,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
   }
 
   void _exportCurrentFolder() {
-    // This logic would recursively fetch all questions in this folder 
-    // and its children and convert to a JSON string.
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Preparing JSON export...")));
   }
 }
