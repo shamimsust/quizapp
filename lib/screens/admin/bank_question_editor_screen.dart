@@ -119,11 +119,12 @@ class _BankQuestionEditorScreenState extends State<BankQuestionEditorScreen> {
       };
 
       if (_editingQuestionId != null) {
-        await _db.child('questionBank/$_editingQuestionId').update(qMap);
+        await _db.child('questionBank/$_editingQuestionId').update(qMap); // Await here
       } else {
-        await _db.child('questionBank').push().set(qMap);
+        await _db.child('questionBank').push().set(qMap); // Await here
       }
       
+      if (!mounted) return; // Check mounted before using context for UI operations
       _clearForm();
       _showSnackBar('Saved to Bank!');
     } catch (e) {
@@ -203,10 +204,13 @@ class _BankQuestionEditorScreenState extends State<BankQuestionEditorScreen> {
         await _db.child('questionBank').push().set(qData);
         count++;
       }
-      _bulkInputController.clear();
+      
+      if (!mounted) return; // Check mounted before using context for UI operations
+      _bulkInputController.clear(); // This is fine without mounted check
       Navigator.pop(context);
       _showSnackBar('Imported $count items successfully!');
     } catch (e) {
+      if (!mounted) return; // Check mounted before using context for UI operations
       _showSnackBar('Check your pipe formatting', isError: true);
     } finally {
       setState(() => _isSaving = false);
@@ -229,9 +233,11 @@ class _BankQuestionEditorScreenState extends State<BankQuestionEditorScreen> {
       );
       final Map<String, dynamic> jsonResponse = jsonDecode(response.body);
       if (response.statusCode == 200) {
+        if (!mounted) return; // Check mounted before using context for UI operations
         setState(() => _imageUrl = jsonResponse['data']['url']);
         _showSnackBar('Image uploaded!');
       }
+      if (!mounted) return; // Check mounted before using context for UI operations, in case of non-200 but no exception
     } catch (e) {
       _showSnackBar('Upload failed', isError: true);
     } finally {
@@ -281,7 +287,7 @@ class _BankQuestionEditorScreenState extends State<BankQuestionEditorScreen> {
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         DropdownButtonFormField<String>(
-          value: _type,
+          initialValue: _type,
           decoration: _inputDecoration('Type'),
           onChanged: (v) => setState(() {
             _type = v!;
