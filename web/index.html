@@ -17,39 +17,67 @@
   <style>
     body {
       inset: 0; overflow: hidden; margin: 0; padding: 0; position: fixed;
-      background-color: #F8FAFC; /* Matches your app's background */
+      /* Sexy dark ambient gradient matching your app's loading states */
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #020617 100%);
       display: flex; align-items: center; justify-content: center;
       font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
     .container {
-      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .spinner-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 86px;
+      height: 86px;
+    }
+    .glowing-halo {
+      position: absolute;
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: rgba(34, 100, 215, 0.15);
+      box-shadow: 0 0 30px rgba(34, 100, 215, 0.3);
+      animation: pulse 2s infinite ease-in-out;
     }
     .loader {
-      width: 48px; height: 48px;
-      border: 5px solid #E2E8F0;
-      border-bottom-color: #2264D7; /* Your primaryBlue */
+      width: 52px; height: 52px;
+      border: 3.5px solid rgba(56, 189, 248, 0.1);
+      border-top-color: #38bdf8; /* Vibrant neon cyan accent indicator */
       border-radius: 50%;
       display: inline-block;
       box-sizing: border-box;
-      animation: rotation 1s linear infinite;
+      animation: rotation 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
     .loading-text {
-      margin-top: 20px;
-      color: #64748B;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 1px;
+      margin-top: 28px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 3px;
       text-transform: uppercase;
     }
     @keyframes rotation {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.6; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
   </style>
 </head>
 <body>
   <div id="loading-indicator" class="container">
-    <span class="loader"></span>
+    <div class="spinner-wrapper">
+      <div class="glowing-halo"></div>
+      <span class="loader"></span>
+    </div>
     <div class="loading-text">Initializing Exam Environment...</div>
   </div>
 

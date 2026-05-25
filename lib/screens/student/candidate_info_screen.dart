@@ -38,7 +38,6 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
 
   Future<void> _initializeScreen() async {
     try {
-      // Ensure the user is signed in to write to the database
       if (FirebaseAuth.instance.currentUser == null) {
         await FirebaseAuth.instance.signInAnonymously();
       }
@@ -217,6 +216,45 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
     );
   }
 
+  // --- SHOW WARNING POPUP DIALOG ---
+  void _showAlreadyTakenDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+            SizedBox(width: 10),
+            Text('Session Restrained', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'You have already initialized or submitted an attempt for this examination. Multiple completions are strictly blocked by the system.',
+          style: TextStyle(fontFamily: 'Inter', color: Color(0xFF475569), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CLOSE', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2264D7),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.go('/results'); // Navigates directly to score checking portal
+            },
+            child: const Text('VIEW RESULTS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _startExam() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
@@ -232,21 +270,40 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw "Session expired. Please refresh the page.";
 
+      // 1. DUPLICATE PROTECTION: Check if attempt already exists for this candidate
+      final duplicateCheckSnap = await _db
+          .child('attempts')
+          .orderByChild('userId_examId')
+          .equalTo('${user.uid}_$_actualExamId')
+          .get();
+
+      if (duplicateCheckSnap.exists && duplicateCheckSnap.value != null) {
+        // Halt right here, they cannot take it twice
+        if (mounted) {
+          setState(() { _isStarting = false; });
+          _showAlreadyTakenDialog();
+        }
+        return;
+      }
+
+      // 2. Fetch Exam Metadata details
       final examSnap = await _db.child('exams').child(_actualExamId!).get();
       if (!examSnap.exists) throw "The quiz was not found or has been deleted.";
 
       final examData = Map<String, dynamic>.from(examSnap.value as Map);
       final int durationMs = examData['durationMs'] ?? 3600000;
 
-      // Create Attempt
+      // 3. Setup New Entry Database Node
       final newAttemptRef = _db.child('attempts').push();
       final attemptId = newAttemptRef.key;
-      const startTime = ServerValue.timestamp; // Use ServerValue for accuracy
+      const startTime = ServerValue.timestamp;
 
       await newAttemptRef.set({
         'examId': _actualExamId,
         'examTitle': _examTitle,
         'userId': user.uid,
+        // Composite unique index constraint string rule tracking
+        'userId_examId': '${user.uid}_$_actualExamId',
         'candidate': {'name': name, 'email': email},
         'status': 'in_progress',
         'startTime': startTime,
@@ -255,7 +312,6 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       });
 
       if (mounted) {
-        // Clear inputs and move to exam
         _nameController.clear();
         _emailController.clear();
         context.go('/exam/$attemptId');

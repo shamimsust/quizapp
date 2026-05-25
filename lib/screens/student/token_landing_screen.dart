@@ -17,6 +17,7 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
   String? _examId;
   String? _error;
   bool _isLoading = false;
+  bool _alreadyTaken = false; // Tracks if the student has taken the test before
   final Color _primaryBlue = const Color(0xFF2264D7); 
 
   @override
@@ -56,6 +57,7 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
       _isLoading = true;
       _error = null;
       _examId = null;
+      _alreadyTaken = false;
     });
 
     try {
@@ -108,6 +110,21 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
         return;
       }
 
+      // 5. ANTI-CHEAT GUARD: Check if user has already attempted this exam
+      final duplicateCheckSnap = await FirebaseDatabase.instance
+          .ref('attempts')
+          .orderByChild('userId_examId')
+          .equalTo('${user.uid}_$fetchedExamId')
+          .get();
+
+      if (duplicateCheckSnap.exists && duplicateCheckSnap.value != null) {
+        setState(() {
+          _error = 'You have already started or submitted an attempt for this exam.';
+          _alreadyTaken = true;
+        });
+        return;
+      }
+
       // Success
       setState(() => _examId = fetchedExamId);
       
@@ -153,7 +170,7 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
               textCapitalization: TextCapitalization.characters,
               onChanged: (val) {
                 if (_examId != null || _error != null) {
-                  setState(() { _examId = null; _error = null; });
+                  setState(() { _examId = null; _error = null; _alreadyTaken = false; });
                 }
               },
               decoration: InputDecoration(
@@ -186,6 +203,13 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
                 icon: Icons.error_outline_rounded,
                 color: Colors.red,
                 text: _error!,
+                trailingButton: _alreadyTaken 
+                    ? TextButton.icon(
+                        onPressed: () => context.push('/results'),
+                        icon: const Icon(Icons.analytics_outlined, size: 16, color: Colors.red),
+                        label: const Text('Check Score', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      )
+                    : null,
               )
             else if (_examId != null)
               _buildFeedbackBox(
@@ -235,19 +259,36 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
     );
   }
 
-  Widget _buildFeedbackBox({required IconData icon, required Color color, required String text}) {
+  Widget _buildFeedbackBox({
+    required IconData icon, 
+    required Color color, 
+    required String text,
+    Widget? trailingButton,
+  }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withAlpha((0.08 * 255).toInt()),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        border: Border.all(color: color.withAlpha((0.2 * 255).toInt())),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 16),
-          Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14))),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(width: 16),
+              Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14))),
+            ],
+          ),
+          if (trailingButton != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: trailingButton,
+            )
+          ]
         ],
       ),
     );
