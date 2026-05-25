@@ -28,6 +28,24 @@
       align-items: center;
       justify-content: center;
     }
+    
+    /* Premium Branding Titles */
+    .app-title {
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+    .app-subtitle {
+      color: #38bdf8; /* Vibrant neon cyan accent */
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+    }
+
     .spinner-wrapper {
       position: relative;
       display: flex;
@@ -56,7 +74,7 @@
     }
     .loading-text {
       margin-top: 28px;
-      color: rgba(255, 255, 255, 0.6);
+      color: rgba(255, 255, 255, 0.45);
       font-size: 11px;
       font-weight: 900;
       letter-spacing: 3px;
@@ -74,6 +92,9 @@
 </head>
 <body>
   <div id="loading-indicator" class="container">
+    <div class="app-title">Exam Platform</div>
+    <div class="app-subtitle">Assessment Engine</div>
+
     <div class="spinner-wrapper">
       <div class="glowing-halo"></div>
       <span class="loader"></span>
