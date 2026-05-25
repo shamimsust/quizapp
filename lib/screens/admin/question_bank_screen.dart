@@ -211,7 +211,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))],
         border: const Border(top: BorderSide(color: Color(0xFFE2E8F0))),
       ),
       child: SafeArea(
@@ -303,10 +303,12 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
         'parentId': _currentFolderId,
       });
       
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Moved "$_cutItemName" successfully.')),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Failed to move item."), backgroundColor: Colors.redAccent),
       );
