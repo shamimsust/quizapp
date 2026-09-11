@@ -5,19 +5,21 @@ class OptionItem {
 
   Map<String, dynamic> toJson() => {'id': id, 'text': text};
   factory OptionItem.fromJson(Map data) => OptionItem(
-        id: data['id'] ?? '', 
+        id: data['id'] ?? '',
         text: data['text'] ?? '',
       );
 }
 
 class Question {
   final String id;
-  final String type; 
+  final String type;
   final String stem;
-  final List<OptionItem>? options; 
-  final List<String>? correctOptions; 
+  final List<OptionItem>? options;
+  final List<String>? correctOptions;
   final int marks;
-  final bool expectsLatex; 
+  final bool expectsLatex;
+  final int order; // Not sensitive — needed to preserve question sequence
+  final String? imageUrl; // Not sensitive — question illustration, if any
 
   Question({
     required this.id,
@@ -27,6 +29,8 @@ class Question {
     this.correctOptions,
     required this.marks,
     this.expectsLatex = false,
+    this.order = 0,
+    this.imageUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -36,6 +40,8 @@ class Question {
         'correctOptions': correctOptions,
         'marks': marks,
         'expectsLatex': expectsLatex,
+        'order': order,
+        'imageUrl': imageUrl,
       };
 
   factory Question.fromJson(String id, Map data) => Question(
@@ -50,9 +56,13 @@ class Question {
             .toList(),
         marks: data['marks'] ?? 1,
         expectsLatex: data['expectsLatex'] ?? false,
+        order: (data['order'] as num?)?.toInt() ?? 0,
+        imageUrl: data['imageUrl'] as String?,
       );
 
-  // Security factory: sets correctOptions to null
+  // Security factory: sets correctOptions to null.
+  // Everything else here (order, imageUrl, options text, stem, marks) is
+  // safe to expose to students — only the answer key is withheld.
   factory Question.forStudent(String id, Map data) => Question(
         id: id,
         type: data['type'] ?? 'mcq_single',
@@ -62,6 +72,8 @@ class Question {
             .toList(),
         marks: data['marks'] ?? 1,
         expectsLatex: data['expectsLatex'] ?? false,
-        correctOptions: null, 
+        order: (data['order'] as num?)?.toInt() ?? 0,
+        imageUrl: data['imageUrl'] as String?,
+        correctOptions: null,
       );
 }

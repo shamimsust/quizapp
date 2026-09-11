@@ -10,6 +10,8 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_windowmanager/flutter_windowmanager.dart'; // Added security plugin
+import '../../models/question.dart';
+import '../../services/exam_service.dart';
 import '../../widgets/latex_text.dart';
 
 class ExamRoomScreen extends StatefulWidget {
@@ -22,11 +24,13 @@ class ExamRoomScreen extends StatefulWidget {
 
 class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObserver {
   final _db = FirebaseDatabase.instance.ref();
+  final _examService = ExamService();
   final String _imgBBKey = "bd9c2f7a1ff71a3e72aead970348d485";
 
   Map<String, dynamic>? attempt;
-  List<Map<String, dynamic>> questions = [];
+  List<Question> questions = [];
   bool _allowStudentUpload = false;
+  String _examTitle = 'Quiz';
 
   final Map<String, List<String>> _selected = {};
   final Map<String, TextEditingController> _controllers = {};
@@ -53,7 +57,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   void initState() {
     super.initState();
     _enableSecurity(); // Initialize screen protection
-    WidgetsBinding.instance.addObserver(this); 
+    WidgetsBinding.instance.addObserver(this);
     _load();
     _setupConnectionListener();
   }
@@ -116,10 +120,10 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   }
 
   void _handleTabSwitch() {
-    if (_submitting) return; 
-    
+    if (_submitting) return;
+
     setState(() => _tabSwitchStrikes++);
-    
+
     _db.child('attempts/${widget.attemptId}/cheatingLogs').push().set({
       'type': 'tab_switch',
       'timestamp': ServerValue.timestamp,
@@ -198,40 +202,48 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
       final attData = Map<String, dynamic>.from(attSnap.value as Map);
       final examId = attData['examId'];
 
+      // Exam-level config (title, shuffle flags, upload permission) isn't
+      // sensitive on its own, so it's fine to read directly here.
       final examSnap = await _db.child('exams/$examId').get();
       final examMeta = examSnap.exists
           ? Map<String, dynamic>.from(examSnap.value as Map)
-          : {};
+          : <String, dynamic>{};
 
       final bool shuffleQ = examMeta['shuffleQuestions'] ?? false;
       final bool shuffleOpt = examMeta['shuffleOptions'] ?? false;
       final bool allowUpload = examMeta['allowStudentUpload'] ?? false;
+      final String examTitle = examMeta['title'] ?? 'Quiz';
 
-      final qSnap = await _db.child('exams/$examId/questions').get();
-      final List<Map<String, dynamic>> loadedQuestions = [];
+      // Questions are fetched through the secure, student-facing path.
+      // Question.forStudent() never populates correctOptions, so the
+      // answer key doesn't get modeled into the app at all here.
+      // NOTE: this only protects the in-app model — see the security
+      // note about moving correctOptions to a server-only DB node if you
+      // want the raw network payload to be answer-key-free too.
+      List<Question> loadedQuestions =
+          await _examService.watchQuestionsForStudent(examId).first;
 
-      if (qSnap.exists) {
-        final rawData = qSnap.value;
-        if (rawData is Map) {
-          rawData.forEach((key, value) {
-            final qData = Map<String, dynamic>.from(value as Map);
-            if (shuffleOpt &&
-                qData['options'] != null &&
-                qData['options'] is List) {
-              final List optionsList = List.from(qData['options']);
-              optionsList.shuffle();
-              qData['options'] = optionsList;
-            }
-            loadedQuestions.add({'id': key.toString(), ...qData});
-          });
-        }
+      if (shuffleOpt) {
+        loadedQuestions = loadedQuestions.map((q) {
+          if (q.options == null) return q;
+          final shuffledOptions = List<OptionItem>.from(q.options!)..shuffle();
+          return Question(
+            id: q.id,
+            type: q.type,
+            stem: q.stem,
+            options: shuffledOptions,
+            marks: q.marks,
+            expectsLatex: q.expectsLatex,
+            order: q.order,
+            imageUrl: q.imageUrl,
+          );
+        }).toList();
       }
 
       if (shuffleQ) {
         loadedQuestions.shuffle();
       } else {
-        loadedQuestions
-            .sort((a, b) => (a['order'] ?? 0).compareTo(b['order'] ?? 0));
+        loadedQuestions.sort((a, b) => a.order.compareTo(b.order));
       }
 
       final ansSnap =
@@ -258,6 +270,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
           attempt = attData;
           questions = loadedQuestions;
           _allowStudentUpload = allowUpload;
+          _examTitle = examTitle;
           _lastSynced = DateTime.now();
         });
       }
@@ -344,48 +357,27 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
     if (_submitting || !mounted) return;
     setState(() => _submitting = true);
     try {
-      final examId = attempt?['examId'];
-      final examSnap = await _db.child('exams/$examId').get();
-      final examMeta = examSnap.exists
-          ? Map<String, dynamic>.from(examSnap.value as Map)
-          : {};
-      final bool forceManual = examMeta['isManualGrading'] ?? false;
+      // IMPORTANT: correctOptions is intentionally never available on the
+      // client's Question objects (see Question.forStudent), so this
+      // screen can no longer compute or trust a score. All it does now is
+      // total up the possible marks (not sensitive) and hand the attempt
+      // off as 'submitted'. A Cloud Function (triggered on write to
+      // attemptAnswers/{attemptId} or attempts/{attemptId}/status) should
+      // read the real answer key server-side, grade it, and write
+      // 'score' / 'isManualGraded' / final 'status' itself. Firebase
+      // security rules should also block clients from writing 'score'
+      // directly, so a tampered client can't self-grade.
       int totalPossible = 0;
-      num obtainedScore = 0;
-      bool hasWrittenContent = false;
-
-      final ansSnap =
-          await _db.child('attemptAnswers/${widget.attemptId}').get();
-      final userAnswers = Map<String, dynamic>.from(ansSnap.value as Map? ?? {});
-
       for (final q in questions) {
-        final qid = q['id'];
-        final type = q['type'] ?? 'mcq_single';
-        if (type == 'info_block') continue;
-        final int qMarks = (q['marks'] as num?)?.toInt() ?? 1;
-        totalPossible += qMarks;
-
-        if (type == 'written') {
-          hasWrittenContent = true;
-        } else {
-          final List correct = q['correctOptions'] ?? [];
-          final userEntry = userAnswers[qid];
-          final List selected = (userEntry is Map)
-              ? (userEntry['selected'] as List? ?? []) : [];
-          final bool isCorrect = selected.length == correct.length &&
-              selected.every((e) => correct.contains(e));
-          if (isCorrect) obtainedScore += qMarks;
-        }
+        if (q.type == 'info_block') continue;
+        totalPossible += q.marks;
       }
 
-      final bool needsReview = forceManual || hasWrittenContent;
       await _db.child('attempts/${widget.attemptId}').update({
-        'status': needsReview ? 'submitted' : 'completed',
-        'score': obtainedScore,
+        'status': 'submitted', // Cloud Function should transition this to 'completed' once graded.
         'totalPossible': totalPossible,
-        'isManualGraded': needsReview,
         'submittedAt': ServerValue.timestamp,
-        'examTitle': examMeta['title'] ?? 'Quiz',
+        'examTitle': _examTitle,
       });
       if (mounted) context.go('/submitted/${widget.attemptId}');
     } catch (e) {
@@ -503,17 +495,17 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
               itemCount: questions.length,
               itemBuilder: (context, index) {
                 final q = questions[index];
-                final qid = q['id'];
-                final type = q['type'] ?? 'mcq_single';
-                final stem = q['stem'] ?? q['text'] ?? "Question missing";
-                final imageUrl = q['imageUrl'];
+                final qid = q.id;
+                final type = q.type;
+                final stem = q.stem.isNotEmpty ? q.stem : "Question missing";
+                final imageUrl = q.imageUrl;
                 final bool isInfo = type == 'info_block';
 
                 final int displayNum = isInfo
                     ? 0
                     : questions
                         .take(index + 1)
-                        .where((item) => item['type'] != 'info_block')
+                        .where((item) => item.type != 'info_block')
                         .length;
 
                 return Card(
@@ -621,9 +613,9 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
                                     : 'Attach Image Evidence'),
                               ),
                             ]
-                          ] else if (q['options'] != null)
-                            ...(q['options'] as List).map((opt) {
-                              final optId = opt['id'].toString();
+                          ] else if (q.options != null)
+                            ...q.options!.map((opt) {
+                              final optId = opt.id;
                               final isSelected =
                                   (_selected[qid] ?? []).contains(optId);
                               return GestureDetector(
@@ -653,8 +645,7 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
                                         size: 20),
                                     const SizedBox(width: 12),
                                     Expanded(
-                                        child: LatexText(opt['text'] ?? "",
-                                            size: 15)),
+                                        child: LatexText(opt.text, size: 15)),
                                   ]),
                                 ),
                               );
