@@ -42,7 +42,12 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
 
   // --- ANTI-CHEAT CONFIGURATION ---
   int _tabSwitchStrikes = 0;
-  final int _maxAllowedSwitches = 3; 
+  final int _maxAllowedSwitches = 3;
+  // Suppresses tab-switch detection while the app itself causes a lifecycle
+  // change (e.g. opening the system image picker, camera, or a permission
+  // dialog). Without this, legitimate actions like attaching an image get
+  // misreported as cheating because they also trigger `inactive`/`paused`.
+  bool _expectingSystemUI = false;
 
   @override
   void initState() {
@@ -90,7 +95,23 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Detects app minimizing, split screen, or recent apps view
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      // Ignore lifecycle changes we caused ourselves (e.g. image picker,
+      // camera, permission dialogs) so legitimate actions aren't flagged.
+      if (_expectingSystemUI) return;
       _handleTabSwitch();
+    }
+  }
+
+  // Wrap any action that is expected to spawn system UI (image picker,
+  // camera, share sheet, permission prompts, etc.) so the resulting
+  // inactive/paused lifecycle event isn't counted as a tab switch.
+  // try/finally guarantees the flag is cleared even if the action throws.
+  Future<T?> _runWithSystemUIException<T>(Future<T?> Function() action) async {
+    _expectingSystemUI = true;
+    try {
+      return await action();
+    } finally {
+      _expectingSystemUI = false;
     }
   }
 
@@ -113,10 +134,6 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   }
 
   void _forceSubmitDueToCheating() {
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
-    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("Maximum tab switches exceeded. Submitting automatically."),
@@ -124,8 +141,11 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
         duration: Duration(seconds: 5),
       ),
     );
-    
-    _submit(); 
+
+    // Submit first; _submit() itself navigates to the "submitted" screen
+    // once it's done, so we avoid popping this screen and then trying to
+    // use its (possibly disposed) context/navigator afterwards.
+    _submit();
   }
 
   void _showCheatingWarning() {
@@ -251,8 +271,11 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
   }
 
   Future<void> _uploadAnswerImage(String qid) async {
-    final image = await ImagePicker()
-        .pickImage(source: ImageSource.gallery, imageQuality: 60);
+    // Guard the picker call so the gallery opening (which triggers an
+    // `inactive`/`paused` lifecycle event) isn't mistaken for a tab switch.
+    final image = await _runWithSystemUIException(
+      () => ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 60),
+    );
     if (image == null) return;
 
     setState(() => _uploadingStates[qid] = true);
