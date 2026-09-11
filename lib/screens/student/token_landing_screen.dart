@@ -1,5 +1,5 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
@@ -18,12 +18,12 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
   String? _error;
   bool _isLoading = false;
   bool _alreadyTaken = false; // Tracks if the student has taken the test before
-  final Color _primaryBlue = const Color(0xFF2264D7); 
+  final Color _primaryBlue = const Color(0xFF2264D7);
 
   @override
   void initState() {
     super.initState();
-    
+
     // START AUTH IMMEDIATELY: Fixes the 'verify twice' race condition
     _prepareAuth();
 
@@ -71,63 +71,32 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
         }
       }
 
-      // 2. Sanitize Input
+      // 2. Sanitize input client-side too (fast feedback before the round
+      // trip). The Cloud Function repeats this check server-side — never
+      // rely on client-side validation alone.
       final invalidCharRegex = RegExp(r'[.#$\[\]/]');
       if (invalidCharRegex.hasMatch(token)) {
         setState(() => _error = 'Token contains invalid characters.');
         return;
       }
 
-      // 3. Verify Token
-      final tokenSnap = await FirebaseDatabase.instance.ref('examTokens').child(token).get();
-      
-      if (!tokenSnap.exists) {
-        setState(() => _error = 'Invalid token. Please check the code.');
-        return;
-      }
+      // 3–5. Token lookup, exam-published check, and duplicate-attempt
+      // check all happen server-side now, via the Admin SDK. This means
+      // the client no longer needs direct read access to examTokens, the
+      // full exams/{examId} subtree, or a list query across all attempts —
+      // see database.rules.json for the tightened rules that follow from
+      // this change.
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('redeemExamToken');
+      final result = await callable.call(<String, dynamic>{'token': token});
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      final tokenData = Map<dynamic, dynamic>.from(tokenSnap.value as Map);
-      final fetchedExamId = tokenData['examId']?.toString();
-
-      if (fetchedExamId == null || fetchedExamId.isEmpty) {
-        setState(() => _error = 'This token points to an invalid quiz.');
-        return;
-      }
-
-      // 4. GUARD: Check if Exam is Published
-      final examSnap = await FirebaseDatabase.instance.ref('exams').child(fetchedExamId).get();
-      
-      if (!examSnap.exists) {
-        setState(() => _error = 'The associated exam has been removed.');
-        return;
-      }
-
-      final examData = Map<dynamic, dynamic>.from(examSnap.value as Map);
-      final String status = examData['status']?.toString() ?? 'draft';
-
-      if (status != 'published') {
-        setState(() => _error = 'This exam is currently in DRAFT mode and not accepting entries.');
-        return;
-      }
-
-      // 5. ANTI-CHEAT GUARD: Check if user has already attempted this exam
-      final duplicateCheckSnap = await FirebaseDatabase.instance
-          .ref('attempts')
-          .orderByChild('userId_examId')
-          .equalTo('${user.uid}_$fetchedExamId')
-          .get();
-
-      if (duplicateCheckSnap.exists && duplicateCheckSnap.value != null) {
-        setState(() {
-          _error = 'You have already started or submitted an attempt for this exam.';
-          _alreadyTaken = true;
-        });
-        return;
-      }
-
-      // Success
-      setState(() => _examId = fetchedExamId);
-      
+      setState(() => _examId = data['examId'] as String?);
+    } on FirebaseFunctionsException catch (e) {
+      setState(() {
+        _alreadyTaken = e.code == 'already-exists';
+        _error = e.message ?? 'Something went wrong. Please try again.';
+      });
     } catch (e) {
       debugPrint("Validation Error: $e");
       setState(() => _error = 'Connection error. Please try again.');
@@ -141,8 +110,8 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Join Quiz Room', 
-          style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 0.5, fontSize: 16)),
+        title: const Text('Join Quiz Room',
+            style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, letterSpacing: 0.5, fontSize: 16)),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -164,7 +133,7 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
               style: TextStyle(color: Color(0xFF64748B), fontSize: 15, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 32),
-            
+
             TextField(
               controller: _tokenController,
               textCapitalization: TextCapitalization.characters,
@@ -190,9 +159,9 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
               ),
               onSubmitted: (_) => _validateToken(),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             if (_isLoading)
               const Center(child: Padding(
                 padding: EdgeInsets.all(20),
@@ -203,7 +172,7 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
                 icon: Icons.error_outline_rounded,
                 color: Colors.red,
                 text: _error!,
-                trailingButton: _alreadyTaken 
+                trailingButton: _alreadyTaken
                     ? TextButton.icon(
                         onPressed: () => context.push('/results'),
                         icon: const Icon(Icons.analytics_outlined, size: 16, color: Colors.red),
@@ -223,18 +192,18 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
             Center(
               child: Column(
                 children: [
-                  const Text("Looking for your results?", 
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Text("Looking for your results?",
+                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.w600)),
                   TextButton(
                     onPressed: () => context.push('/results'),
-                    child: Text("Access Result Portal", 
-                      style: TextStyle(color: _primaryBlue, fontWeight: FontWeight.w900, decoration: TextDecoration.underline)),
+                    child: Text("Access Result Portal",
+                        style: TextStyle(color: _primaryBlue, fontWeight: FontWeight.w900, decoration: TextDecoration.underline)),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
-            
+
             SizedBox(
               width: double.infinity,
               height: 58,
@@ -260,8 +229,8 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
   }
 
   Widget _buildFeedbackBox({
-    required IconData icon, 
-    required Color color, 
+    required IconData icon,
+    required Color color,
     required String text,
     Widget? trailingButton,
   }) {

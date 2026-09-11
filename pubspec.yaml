@@ -44,6 +44,7 @@ dependencies:
   
   # Fix: Changed intl to 0.20.2 to avoid version conflict with flutter_localizations
   intl: ^0.20.2
+  cloud_functions: ^6.4.0
 
 dev_dependencies:
   flutter_test:

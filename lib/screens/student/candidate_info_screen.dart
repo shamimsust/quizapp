@@ -1,10 +1,11 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/auth_service.dart';
 
 class CandidateInfoScreen extends StatefulWidget {
-  final String? examId; 
+  final String? examId;
   const CandidateInfoScreen({super.key, this.examId});
 
   @override
@@ -14,11 +15,9 @@ class CandidateInfoScreen extends StatefulWidget {
 class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _db = FirebaseDatabase.instance.ref();
 
-  String? _token;
-  String? _actualExamId; 
-  String? _examTitle; 
+  String? _actualExamId;
+  String? _examTitle;
   bool _isStarting = false;
   bool _isLoading = true;
   String? _error;
@@ -39,44 +38,33 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
   Future<void> _initializeScreen() async {
     try {
       if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+        await AuthService().signInStudentAnonymously();
       }
 
       final inputId = widget.examId?.trim();
       if (inputId == null || inputId.isEmpty) {
-        setState(() { 
-          _error = "No Quiz ID or Token provided."; 
-          _isLoading = false; 
+        setState(() {
+          _error = "No Quiz ID or Token provided.";
+          _isLoading = false;
         });
         return;
       }
 
-      // 1. Resolve Token -> Exam mapping
-      final tokenSnap = await _db.child('examTokens').child(inputId).get();
-      
-      if (tokenSnap.exists) {
-        _token = inputId;
-        final data = Map<String, dynamic>.from(tokenSnap.value as Map);
-        _actualExamId = data['examId']?.toString();
-      } else {
-        _actualExamId = inputId; // Assume it's a direct Exam ID
-      }
+      // Token/examId resolution and the published-status check now happen
+      // server-side (see resolveExamEntry in functions/index.js). This also
+      // means the client no longer needs direct read access to examTokens
+      // or exams for this step.
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('resolveExamPreview');
+      final result = await callable.call(<String, dynamic>{'input': inputId});
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      // 2. Fetch Exam Metadata
-      if (_actualExamId != null) {
-        final examSnap = await _db.child('exams').child(_actualExamId!).get();
-        if (examSnap.exists) {
-          final examData = Map<String, dynamic>.from(examSnap.value as Map);
-          setState(() {
-            _examTitle = examData['title'] ?? 'Untitled Quiz';
-          });
-        } else {
-          _error = "Quiz settings not found. Please contact support.";
-        }
-      } else {
-        _error = "Invalid invitation token.";
-      }
-
+      setState(() {
+        _actualExamId = data['examId'] as String?;
+        _examTitle = data['examTitle'] as String?;
+      });
+    } on FirebaseFunctionsException catch (e) {
+      _error = e.message ?? 'Could not load this quiz. Please try again.';
     } catch (e) {
       _error = "Initialization error: $e";
     } finally {
@@ -95,14 +83,14 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Registration', 
+        title: const Text('Registration',
           style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
         backgroundColor: brandBlue,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
       ),
-      body: _isLoading 
+      body: _isLoading
         ? const Center(child: CircularProgressIndicator(color: brandBlue))
         : SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -110,55 +98,55 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_error != null) _buildErrorCard(),
-                
+
                 if (_examTitle != null) ...[
-                  const Text("YOU ARE JOINING:", 
+                  const Text("YOU ARE JOINING:",
                     style: TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
                   const SizedBox(height: 8),
-                  Text(_examTitle!, 
+                  Text(_examTitle!,
                     style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: brandBlue, fontFamily: 'Inter')),
                   const SizedBox(height: 32),
                 ],
 
-                const Text("Enter your credentials to begin.", 
+                const Text("Enter your credentials to begin.",
                   style: TextStyle(color: Color(0xFF475569), fontSize: 15, fontFamily: 'Inter')),
                 const SizedBox(height: 24),
-                
+
                 _buildTextField(
                   controller: _nameController,
                   label: 'Full Name',
                   icon: Icons.person_outline_rounded,
                 ),
                 const SizedBox(height: 16),
-                
+
                 _buildTextField(
                   controller: _emailController,
                   label: 'Email Address',
                   icon: Icons.alternate_email_rounded,
                   keyboardType: TextInputType.emailAddress,
                 ),
-                
+
                 const SizedBox(height: 48),
-                
+
                 SizedBox(
                   width: double.infinity,
                   height: 60,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: brandBlue, 
+                      backgroundColor: brandBlue,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
                     ),
                     onPressed: (_isStarting || _actualExamId == null || _error != null) ? null : _startExam,
                     child: _isStarting
                         ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                        : const Text('START SESSION', 
+                        : const Text('START SESSION',
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 1.2, fontFamily: 'Inter')),
                   ),
                 ),
                 const SizedBox(height: 24),
                 const Center(
-                  child: Text("Ensure you have a stable connection. Progress is auto-synced.", 
+                  child: Text("Ensure you have a stable connection. Progress is auto-synced.",
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontFamily: 'Inter')),
                 ),
@@ -202,8 +190,8 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2), 
-        borderRadius: BorderRadius.circular(14), 
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFFEE2E2))
       ),
       child: Row(
@@ -270,53 +258,40 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw "Session expired. Please refresh the page.";
 
-      // 1. DUPLICATE PROTECTION: Check if attempt already exists for this candidate
-      final duplicateCheckSnap = await _db
-          .child('attempts')
-          .orderByChild('userId_examId')
-          .equalTo('${user.uid}_$_actualExamId')
-          .get();
+      final inputId = widget.examId?.trim();
 
-      if (duplicateCheckSnap.exists && duplicateCheckSnap.value != null) {
-        // Halt right here, they cannot take it twice
-        if (mounted) {
-          setState(() { _isStarting = false; });
-          _showAlreadyTakenDialog();
-        }
-        return;
-      }
-
-      // 2. Fetch Exam Metadata details
-      final examSnap = await _db.child('exams').child(_actualExamId!).get();
-      if (!examSnap.exists) throw "The quiz was not found or has been deleted.";
-
-      final examData = Map<String, dynamic>.from(examSnap.value as Map);
-      final int durationMs = examData['durationMs'] ?? 3600000;
-
-      // 3. Setup New Entry Database Node
-      final newAttemptRef = _db.child('attempts').push();
-      final attemptId = newAttemptRef.key;
-      const startTime = ServerValue.timestamp;
-
-      await newAttemptRef.set({
-        'examId': _actualExamId,
-        'examTitle': _examTitle,
-        'userId': user.uid,
-        // Composite unique index constraint string rule tracking
-        'userId_examId': '${user.uid}_$_actualExamId',
-        'candidate': {'name': name, 'email': email},
-        'status': 'in_progress',
-        'startTime': startTime,
-        'endTime': DateTime.now().millisecondsSinceEpoch + durationMs, 
-        'createdFromToken': _token,
+      // Re-resolution, the published-status check, the duplicate-attempt
+      // check, and attempt creation all happen together, atomically, inside
+      // this single Cloud Function call — see startExamAttempt in
+      // functions/index.js. This closes the check-then-create race that
+      // existed when those steps ran as separate client-side operations,
+      // and computes endTime from the server's clock rather than this
+      // device's clock.
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('startExamAttempt');
+      final result = await callable.call(<String, dynamic>{
+        'input': inputId,
+        'name': name,
+        'email': email,
       });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final attemptId = data['attemptId'] as String?;
+
+      if (attemptId == null) {
+        throw "Could not start the exam. Please try again.";
+      }
 
       if (mounted) {
         _nameController.clear();
         _emailController.clear();
         context.go('/exam/$attemptId');
       }
-
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'already-exists') {
+        if (mounted) _showAlreadyTakenDialog();
+      } else if (mounted) {
+        setState(() => _error = e.message ?? 'Something went wrong. Please try again.');
+      }
     } catch (err) {
       if (mounted) setState(() => _error = err.toString());
     } finally {
