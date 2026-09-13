@@ -1,7 +1,8 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/attempt_service.dart';
 import '../../services/auth_service.dart';
 
 class CandidateInfoScreen extends StatefulWidget {
@@ -15,7 +16,10 @@ class CandidateInfoScreen extends StatefulWidget {
 class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _db = FirebaseDatabase.instance.ref();
+  final _attemptService = AttemptService();
 
+  String? _token;
   String? _actualExamId;
   String? _examTitle;
   bool _isStarting = false;
@@ -37,8 +41,16 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
 
   Future<void> _initializeScreen() async {
     try {
-      if (FirebaseAuth.instance.currentUser == null) {
-        await AuthService().signInStudentAnonymously();
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        user = await AuthService().signInStudentAnonymously();
+        if (user == null) {
+          setState(() {
+            _error = "Identity verification failed. Check internet.";
+            _isLoading = false;
+          });
+          return;
+        }
       }
 
       final inputId = widget.examId?.trim();
@@ -50,21 +62,75 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
         return;
       }
 
-      // Token/examId resolution and the published-status check now happen
-      // server-side (see resolveExamEntry in functions/index.js). This also
-      // means the client no longer needs direct read access to examTokens
-      // or exams for this step.
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('resolveExamPreview');
-      final result = await callable.call(<String, dynamic>{'input': inputId});
-      final data = Map<String, dynamic>.from(result.data as Map);
+      final invalidCharRegex = RegExp(r'[.#$\[\]/]');
+      if (invalidCharRegex.hasMatch(inputId)) {
+        setState(() {
+          _error = "Input contains invalid characters.";
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 1. Resolve Token -> Exam ID mapping or direct Exam ID
+      final tokenSnap = await _db.child('examTokens/$inputId').get();
+      String? resolvedExamId;
+      if (tokenSnap.exists) {
+        _token = inputId;
+        resolvedExamId = tokenSnap.child('examId').value?.toString();
+        if (resolvedExamId == null || resolvedExamId.isEmpty) {
+          setState(() {
+            _error = 'Invalid token mapping. Contact instructor.';
+            _isLoading = false;
+          });
+          return;
+        }
+      } else {
+        _token = null;
+        resolvedExamId = inputId;
+      }
+
+      // 2. Verify that the exam exists and is published (matching TokenLandingScreen)
+      final examSnap = await _db.child('exams/$resolvedExamId').get();
+      if (!examSnap.exists) {
+        setState(() {
+          _error = 'Exam no longer exists.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final isPublished = (examSnap.child('isPublished').value == true) ||
+          (examSnap.child('status').value == 'published');
+      if (!isPublished) {
+        setState(() {
+          _error = 'This exam is not yet active.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 3. Check for prior attempt via atomic index check (matching TokenLandingScreen)
+      final attemptKey = '${user.uid}_$resolvedExamId';
+      final attemptIndexSnap = await _db.child('attemptIndex/$attemptKey').get();
+
+      if (attemptIndexSnap.exists) {
+        setState(() {
+          _actualExamId = resolvedExamId;
+          _error = 'You have already attempted this exam.';
+          _isLoading = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showAlreadyTakenDialog();
+        });
+        return;
+      }
+
+      final title = examSnap.child('title').value?.toString() ?? 'Untitled Quiz';
 
       setState(() {
-        _actualExamId = data['examId'] as String?;
-        _examTitle = data['examTitle'] as String?;
+        _actualExamId = resolvedExamId;
+        _examTitle = title;
       });
-    } on FirebaseFunctionsException catch (e) {
-      _error = e.message ?? 'Could not load this quiz. Please try again.';
     } catch (e) {
       _error = "Initialization error: $e";
     } finally {
@@ -252,45 +318,62 @@ class _CandidateInfoScreenState extends State<CandidateInfoScreen> {
       return;
     }
 
-    setState(() { _isStarting = true; _error = null; });
+    setState(() {
+      _isStarting = true;
+      _error = null;
+    });
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw "Session expired. Please refresh the page.";
 
-      final inputId = widget.examId?.trim();
-
-      // Re-resolution, the published-status check, the duplicate-attempt
-      // check, and attempt creation all happen together, atomically, inside
-      // this single Cloud Function call — see startExamAttempt in
-      // functions/index.js. This closes the check-then-create race that
-      // existed when those steps ran as separate client-side operations,
-      // and computes endTime from the server's clock rather than this
-      // device's clock.
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('startExamAttempt');
-      final result = await callable.call(<String, dynamic>{
-        'input': inputId,
-        'name': name,
-        'email': email,
-      });
-      final data = Map<String, dynamic>.from(result.data as Map);
-      final attemptId = data['attemptId'] as String?;
-
-      if (attemptId == null) {
-        throw "Could not start the exam. Please try again.";
+      if (_actualExamId == null) {
+        throw "Quiz not found. Please reload the page.";
       }
+
+      final attemptKey = '${user.uid}_$_actualExamId';
+
+      // 1. Check for prior attempt via atomic index check (matching TokenLandingScreen)
+      final attemptIndexSnap = await _db.child('attemptIndex/$attemptKey').get();
+      if (attemptIndexSnap.exists) {
+        if (mounted) {
+          setState(() => _isStarting = false);
+          _showAlreadyTakenDialog();
+        }
+        return;
+      }
+
+      // 2. Fetch exam metadata for duration and verify active status
+      final examSnap = await _db.child('exams/$_actualExamId').get();
+      if (!examSnap.exists) {
+        throw "The quiz was not found or has been deleted.";
+      }
+
+      final examData = Map<String, dynamic>.from(examSnap.value as Map);
+      final isPublished = (examData['isPublished'] == true) ||
+          (examData['status'] == 'published');
+      if (!isPublished) {
+        throw "This exam is not yet active.";
+      }
+
+      final int durationMs = (examData['durationMs'] as num?)?.toInt() ?? 3600000;
+
+      // 3. Start attempt using AttemptService
+      final attemptId = await _attemptService.startAttempt(
+        examId: _actualExamId!,
+        uid: user.uid,
+        candidate: {'name': name, 'email': email},
+        durationMs: durationMs,
+        token: _token,
+      );
+
+      // 4. Record to attemptIndex to prevent duplicate attempts
+      await _db.child('attemptIndex/$attemptKey').set(attemptId);
 
       if (mounted) {
         _nameController.clear();
         _emailController.clear();
         context.go('/exam/$attemptId');
-      }
-    } on FirebaseFunctionsException catch (e) {
-      if (e.code == 'already-exists') {
-        if (mounted) _showAlreadyTakenDialog();
-      } else if (mounted) {
-        setState(() => _error = e.message ?? 'Something went wrong. Please try again.');
       }
     } catch (err) {
       if (mounted) setState(() => _error = err.toString());

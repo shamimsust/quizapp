@@ -90,7 +90,7 @@ class AdminDashboardScreen extends StatelessWidget {
             subtitle: 'Switch to the candidate entry screen',
             icon: Icons.co_present_rounded,
             color: Colors.blueGrey.shade700,
-            onTap: () => context.go('/'), 
+            onTap: () => context.go('/?exit=true'), 
           ),
         ],
       ),

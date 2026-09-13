@@ -45,23 +45,41 @@ final routerProvider = Provider<GoRouter>((ref) {
       final bool onAdminLogin = loc == '/admin/signin';
       final bool onRoot = loc == '/';
       final bool onLoading = loc == '/loading';
+      final bool adminExit =
+          loc == '/' && state.uri.queryParameters['exit'] == 'true';
 
-      // 1. Handle Loading States
+      // Routes that must survive the auth/role loading spinner unchanged.
+      // Deep-link tokens (/e/:token) must not be wiped before resolution,
+      // and active exam sessions (/exam/:...), /submitted/, /result/ must never be interrupted mid-test.
+      final bool isProtectedDeepLink = loc.startsWith('/e/') ||
+          loc.startsWith('/exam/') ||
+          loc.startsWith('/submitted/') ||
+          loc.startsWith('/result/');
+
+      // 1. Handle loading state — but never clobber protected deep links.
       if (roleAsync.isLoading || roleAsync.isRefreshing) {
+        if (isProtectedDeepLink) return null; // stay on current URL
         return '/loading';
       }
 
-      if (onLoading && !roleAsync.isLoading) {
+      // 2. Once loading is done, bounce /loading back to home (or admin dashboard).
+      if (onLoading) {
+        if (user != null && role == 'admin') return '/admin';
         return '/';
       }
 
-      // 2. Admin Access Control
-      if (user != null && role == 'admin') {
-        if (onRoot || onAdminLogin) return '/admin';
+      // 3. Allow admin to exit to public landing page via query param.
+      if (adminExit && role == 'admin') {
         return null;
       }
 
-      // 3. Security Redirection & Path Guarding
+      // 4. Admin Access Control — only auto-redirect when on root or admin sign-in.
+      if (user != null && role == 'admin') {
+        if (onRoot || onAdminLogin) return '/admin';
+        return null; // admin stays wherever they navigated
+      }
+
+      // 5. Security Redirection & Path Guarding
       if (goingAdmin) {
         if (onAdminLogin) return null;
         if (user == null) return '/admin/signin';
@@ -166,7 +184,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-// --- SEXY PREMIUMLOADING WIDGET ---
+// --- SEXY PREMIUM LOADING WIDGET ---
 class PremiumAuthLoadingScreen extends StatefulWidget {
   const PremiumAuthLoadingScreen({super.key});
 
@@ -265,7 +283,8 @@ class _PremiumAuthLoadingScreenState extends State<PremiumAuthLoadingScreen>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF2264D7).withValues(alpha: 0.4),
+                              color:
+                                  const Color(0xFF2264D7).withValues(alpha: 0.4),
                               blurRadius: 20,
                               spreadRadius: 2,
                             )
@@ -275,8 +294,7 @@ class _PremiumAuthLoadingScreenState extends State<PremiumAuthLoadingScreen>
                           ),
                         ),
                         child: const Icon(
-                          Icons
-                              .shield_rounded, // Premium looking security token guard
+                          Icons.shield_rounded,
                           color: Colors.white,
                           size: 28,
                         ),

@@ -1,23 +1,16 @@
 {
-  "flutter": {
-    "platforms": {
-      "dart": {
-        "lib/firebase_options.dart": {
-          "projectId": "math-quiz-app-893b2",
-          "configurations": {
-            "web": "1:964869146856:web:83ff4599cf5cada401e15d"
-          }
-        }
-      }
-    }
+  "database": {
+    "rules": "database.rules.json"
   },
   "hosting": {
-    "target": "main-site",
+    "site": "math-quiz-app-893b2",
     "public": "build/web",
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "**/*.map",
+      "**/*.pdb"
     ],
     "rewrites": [
       {

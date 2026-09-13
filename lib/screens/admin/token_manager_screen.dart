@@ -44,7 +44,6 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
           const SizedBox(height: 12),
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
-              // Specific path to avoid "permission_denied at /"
               stream: _db.child('examTokens').onValue, 
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -52,7 +51,13 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                 }
                 
                 if (snapshot.hasError) {
-                  return const Center(child: Text("Error: Access Denied"));
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text("Error loading tokens: ${snapshot.error}", 
+                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                    ),
+                  );
                 }
 
                 if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
@@ -86,9 +91,16 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                     final String examId = tData['examId'] ?? '';
                     
                     return FutureBuilder<DataSnapshot>(
-                      future: _db.child('exams').child(examId).child('title').get(),
+                      future: _db.child('exams').child(examId).get(),
                       builder: (context, examSnap) {
-                        final String examTitle = examSnap.data?.value?.toString() ?? "Loading...";
+                        String examTitle = "Loading...";
+                        if (examSnap.hasData && examSnap.data?.value != null) {
+                          final examData = Map<dynamic, dynamic>.from(examSnap.data!.value as Map);
+                          examTitle = examData['title']?.toString() ?? 'Untitled Exam';
+                        } else if (examSnap.connectionState == ConnectionState.done) {
+                          examTitle = "Exam Deleted ($examId)";
+                        }
+
                         return _buildTokenTile(tokenCode, examTitle);
                       },
                     );
@@ -137,7 +149,8 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
                   ),
                   items: exams.entries.map((e) {
                     final data = e.value as Map;
-                    final bool isPublished = data['status'] == 'published';
+                    // Support both boolean flag and string status for publication
+                    final bool isPublished = (data['isPublished'] == true) || (data['status'] == 'published');
                     return DropdownMenuItem<String>(
                       value: e.key as String,
                       child: Row(
@@ -267,7 +280,10 @@ class _TokenManagerScreenState extends State<TokenManagerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Token generated successfully!')));
       }
     } catch (e) {
-      if (mounted) setState(() => _isGenerating = false);
+      if (mounted) {
+        setState(() => _isGenerating = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate token: $e')));
+      }
     }
   }
 }

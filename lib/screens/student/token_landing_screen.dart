@@ -1,7 +1,7 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../../services/auth_service.dart';
 
 class TokenLandingScreen extends StatefulWidget {
@@ -71,32 +71,56 @@ class _TokenLandingScreenState extends State<TokenLandingScreen> {
         }
       }
 
-      // 2. Sanitize input client-side too (fast feedback before the round
-      // trip). The Cloud Function repeats this check server-side — never
-      // rely on client-side validation alone.
+      // 2. Client-side input sanitization
       final invalidCharRegex = RegExp(r'[.#$\[\]/]');
       if (invalidCharRegex.hasMatch(token)) {
         setState(() => _error = 'Token contains invalid characters.');
         return;
       }
 
-      // 3–5. Token lookup, exam-published check, and duplicate-attempt
-      // check all happen server-side now, via the Admin SDK. This means
-      // the client no longer needs direct read access to examTokens, the
-      // full exams/{examId} subtree, or a list query across all attempts —
-      // see database.rules.json for the tightened rules that follow from
-      // this change.
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('redeemExamToken');
-      final result = await callable.call(<String, dynamic>{'token': token});
-      final data = Map<String, dynamic>.from(result.data as Map);
+      final db = FirebaseDatabase.instance.ref();
 
-      setState(() => _examId = data['examId'] as String?);
-    } on FirebaseFunctionsException catch (e) {
-      setState(() {
-        _alreadyTaken = e.code == 'already-exists';
-        _error = e.message ?? 'Something went wrong. Please try again.';
-      });
+      // 3. Look up exam ID mapped to token directly from RTDB
+      final tokenSnap = await db.child('examTokens/$token').get();
+      if (!tokenSnap.exists) {
+        setState(() => _error = 'Invalid token. Please check and try again.');
+        return;
+      }
+
+      final fetchedExamId = tokenSnap.child('examId').value as String?;
+      if (fetchedExamId == null || fetchedExamId.isEmpty) {
+        setState(() => _error = 'Invalid token mapping. Contact instructor.');
+        return;
+      }
+
+      // 4. Verify that the exam exists and is published
+      final examSnap = await db.child('exams/$fetchedExamId').get();
+      if (!examSnap.exists) {
+        setState(() => _error = 'Exam no longer exists.');
+        return;
+      }
+
+      final isPublished = (examSnap.child('isPublished').value == true) ||
+          (examSnap.child('status').value == 'published');
+      if (!isPublished) {
+        setState(() => _error = 'This exam is not yet active.');
+        return;
+      }
+
+      // 5. Check for prior attempt via atomic index check
+      final attemptKey = '${user.uid}_$fetchedExamId';
+      final attemptIndexSnap = await db.child('attemptIndex/$attemptKey').get();
+
+      if (attemptIndexSnap.exists) {
+        setState(() {
+          _alreadyTaken = true;
+          _error = 'You have already attempted this exam.';
+        });
+        return;
+      }
+
+      // Validation passed
+      setState(() => _examId = fetchedExamId);
     } catch (e) {
       debugPrint("Validation Error: $e");
       setState(() => _error = 'Connection error. Please try again.');

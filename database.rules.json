@@ -2,47 +2,56 @@
   "rules": {
     "users": {
       "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
+        ".read": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
     },
     "exams": {
-      ".read": "auth != null", 
-      ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
     },
-    "examQuestions": {
+    "examAnswerKeys": {
       "$examId": {
-    
-        ".read": "auth != null",
-        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+        ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
       }
     },
     "examTokens": {
-      ".indexOn": ["examId"], 
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
       "$token": {
-        ".read": "true", 
-        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "attemptIndex": {
+      "$userExamKey": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
     },
     "attempts": {
-      ".indexOn": ["status", "userId"], 
+      ".indexOn": ["userId", "examId"],
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
       "$attemptId": {
-        ".read": "data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
-        ".write": "(!data.exists() && newData.child('userId').val() === auth.uid) || (data.child('userId').val() === auth.uid && data.child('status').val() === 'in_progress') || root.child('users').child(auth.uid).child('role').val() == 'admin'"
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || data.child('userId').val() === auth.uid)",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid && data.child('status').val() === 'in_progress'))"
       }
     },
     "attemptAnswers": {
       "$attemptId": {
-        "$qId": {
-          ".read": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
-          ".write": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid && now < root.child('attempts').child($attemptId).child('endTime').val()"
-        }
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('attempts').child($attemptId).child('userId').val() === auth.uid)",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('attempts').child($attemptId).child('userId').val() === auth.uid && root.child('attempts').child($attemptId).child('status').val() === 'in_progress'))"
       }
+    },
+    "questionBank": {
+      ".indexOn": ["parentId"],
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
     },
     "results": {
       "$attemptId": {
-        ".read": "root.child('attempts').child($attemptId).child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() == 'admin'",
-        ".write": "root.child('users').child(auth.uid).child('role').val() == 'admin'"
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('attempts').child($attemptId).child('userId').val() === auth.uid)",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('attempts').child($attemptId).child('userId').val() === auth.uid)"
       }
     }
   }

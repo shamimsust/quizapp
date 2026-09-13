@@ -31,7 +31,11 @@ class AttemptService {
 
     // If a token was used, mark it as used in the database
     if (token != null) {
-      await _db.child('examTokens/$token/usedCount').set(ServerValue.increment(1));
+      try {
+        await _db.child('examTokens/$token/usedCount').set(ServerValue.increment(1));
+      } catch (_) {
+        // Ignored if security rules restrict direct client writes to examTokens
+      }
     }
 
     return ref.key!;

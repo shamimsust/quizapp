@@ -185,19 +185,43 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
     final results = await Future.wait([
       _db.child('exams/$examId/questions').get(),
       _db.child('attemptAnswers/$attemptId').get(),
+      _db.child('examAnswerKeys/$examId').get(),
     ]);
     if (!mounted) return;
     Navigator.pop(context);
 
     final Map originalQuestions = (results[0].value as Map?) ?? {};
     final Map studentAnswers = (results[1].value as Map?) ?? {};
+    final Map answerKeys = (results[2].value as Map?) ?? {};
 
     // 2. PRE-INITIALIZE ALL CONTROLLERS HERE (Before the Modal builds)
     studentAnswers.forEach((qId, data) {
       final studentData = Map<String, dynamic>.from(data as Map);
-      scoreControllers[qId.toString()] = TextEditingController(
-        text: (studentData['manualPoints'] ?? studentData['autoPoints'] ?? '0').toString()
-      );
+      String initialScore = (studentData['manualPoints'] ?? studentData['autoPoints'] ?? '').toString();
+
+      // If not yet graded and is an MCQ, calculate auto score from answerKeys or question data
+      if (initialScore.isEmpty || initialScore == 'null') {
+        final q = originalQuestions[qId.toString()];
+        final qType = (q != null && q['type'] != null) ? q['type'].toString() : (studentData['type'] ?? '');
+        if (qType.startsWith('mcq')) {
+          final List correct = List.from(
+            answerKeys[qId.toString()]?['correctOptions'] ??
+            q?['correctOptions'] ??
+            []
+          );
+          final dynamic selected = studentData['selected'];
+          final List selectedList = selected is List ? selected : (selected != null ? [selected] : []);
+          final bool isCorrect = correct.isNotEmpty &&
+              selectedList.length == correct.length &&
+              selectedList.every((e) => correct.contains(e.toString()));
+          final num marks = q?['marks'] ?? 1;
+          initialScore = isCorrect ? marks.toString() : '0';
+        } else {
+          initialScore = '0';
+        }
+      }
+
+      scoreControllers[qId.toString()] = TextEditingController(text: initialScore);
     });
 
     showModalBottomSheet(
@@ -381,19 +405,32 @@ class _ManualGradingScreenState extends State<ManualGradingScreen> {
   Future<void> _submitPerQuestionGrade(String attemptId, String feedback, Map<String, TextEditingController> scoreControllers) async {
     double totalCalculatedScore = 0;
     final Map<String, dynamic> updates = {};
+    final Map<String, double> perQuestion = {};
 
     scoreControllers.forEach((qId, controller) {
       final double qScore = double.tryParse(controller.text) ?? 0;
       totalCalculatedScore += qScore;
+      perQuestion[qId] = qScore;
       updates['attemptAnswers/$attemptId/$qId/manualPoints'] = qScore;
     });
 
+    // Update attempts/$attemptId
     updates['attempts/$attemptId/status'] = 'completed';
     updates['attempts/$attemptId/remarks'] = feedback;
     updates['attempts/$attemptId/score'] = totalCalculatedScore;
     updates['attempts/$attemptId/totalPoints'] = totalCalculatedScore;
     updates['attempts/$attemptId/isManualGraded'] = true;
     updates['attempts/$attemptId/gradedAt'] = ServerValue.timestamp;
+
+    // Update results/$attemptId
+    updates['results/$attemptId/status'] = 'completed';
+    updates['results/$attemptId/remarks'] = feedback;
+    updates['results/$attemptId/score'] = totalCalculatedScore;
+    updates['results/$attemptId/totalPoints'] = totalCalculatedScore;
+    updates['results/$attemptId/perQuestion'] = perQuestion;
+    updates['results/$attemptId/isManualGraded'] = true;
+    updates['results/$attemptId/gradedAt'] = ServerValue.timestamp;
+    updates['results/$attemptId/updatedAt'] = ServerValue.timestamp;
 
     await _db.update(updates);
     if (mounted) Navigator.pop(context);

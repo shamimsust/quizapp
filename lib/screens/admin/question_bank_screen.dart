@@ -1,6 +1,6 @@
-import 'dart:convert'; // Added for jsonEncode
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Added for Clipboard functionality
+import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:go_router/go_router.dart';
 
@@ -14,13 +14,13 @@ class QuestionBankScreen extends StatefulWidget {
 class _QuestionBankScreenState extends State<QuestionBankScreen> {
   final _db = FirebaseDatabase.instance.ref();
   
-  // Navigation State: 'root' is the top level
+  // Navigation State: 'root' is top level
   List<Map<String, String>> _pathStack = [{'id': 'root', 'name': 'Bank'}];
   
   String get _currentFolderId => _pathStack.last['id']!;
   String get _currentFolderName => _pathStack.last['name']!;
 
-  // --- Clipboard State for Moving Items ---
+  // Clipboard State
   String? _cutItemId;
   String? _cutItemName;
   bool _isFolderCut = false;
@@ -41,7 +41,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
           IconButton(
             icon: const Icon(Icons.cloud_download_rounded),
             tooltip: 'Export Folder Content',
-            onPressed: () => _exportCurrentFolder(),
+            onPressed: _exportCurrentFolder,
           ),
         ],
       ),
@@ -56,19 +56,33 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final List<MapEntry<String, dynamic>> folders = [];
-                final List<MapEntry<String, dynamic>> questions = [];
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red)),
+                    ),
+                  );
+                }
+
+                final List<MapEntry<String, Map<dynamic, dynamic>>> folders = [];
+                final List<MapEntry<String, Map<dynamic, dynamic>>> questions = [];
 
                 if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
-                  final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
-                  for (var entry in data.entries) {
-                    final val = Map<String, dynamic>.from(entry.value);
-                    if (val['isFolder'] == true) {
-                      folders.add(entry);
-                    } else {
-                      questions.add(entry);
+                  final rawMap = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
+                  
+                  rawMap.forEach((key, value) {
+                    if (value is Map) {
+                      final itemData = Map<dynamic, dynamic>.from(value);
+                      final entry = MapEntry(key.toString(), itemData);
+                      
+                      if (itemData['isFolder'] == true) {
+                        folders.add(entry);
+                      } else {
+                        questions.add(entry);
+                      }
                     }
-                  }
+                  });
                 }
 
                 if (folders.isEmpty && questions.isEmpty) {
@@ -80,7 +94,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                   children: [
                     if (folders.isNotEmpty) ...[
                       _buildSectionLabel("FOLDERS"),
-                      ...folders.map((f) => _buildFolderTile(f.key, f.value['name'])),
+                      ...folders.map((f) => _buildFolderTile(f.key, f.value['name']?.toString() ?? 'Untitled Folder')),
                       const SizedBox(height: 20),
                     ],
                     if (questions.isNotEmpty) ...[
@@ -92,15 +106,12 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
               },
             ),
           ),
-          // Dynamic clipboard bottom bar panel
           if (_cutItemId != null) _buildPasteStatusBar(primaryBlue),
         ],
       ),
       floatingActionButton: _buildFAB(primaryBlue),
     );
   }
-
-  // --- UI COMPONENTS ---
 
   Widget _buildBreadcrumbs() {
     return Container(
@@ -136,7 +147,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
   }
 
   Widget _buildFolderTile(String id, String name) {
-    // Dim the folder if it's currently cut
     final bool isCurrentlyCut = _cutItemId == id;
 
     return Card(
@@ -182,7 +192,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
       child: ListTile(
         leading: Icon(Icons.functions_rounded, color: isCurrentlyCut ? Colors.grey : const Color(0xFF2264D7)),
         title: Text(
-          data['stem'] ?? 'Untitled Math Question', 
+          data['stem']?.toString() ?? 'Untitled Math Question', 
           maxLines: 1, 
           overflow: TextOverflow.ellipsis, 
           style: TextStyle(
@@ -191,9 +201,12 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
             color: isCurrentlyCut ? Colors.grey : Colors.black,
           ),
         ),
-        subtitle: Text("${data['type']?.toUpperCase().replaceAll('_', ' ')} • ${data['marks']} Marks", style: const TextStyle(fontSize: 11)),
+        subtitle: Text(
+          "${(data['type']?.toString() ?? 'MCQ').toUpperCase().replaceAll('_', ' ')} • ${data['marks'] ?? 1} Marks", 
+          style: const TextStyle(fontSize: 11)
+        ),
         onTap: isCurrentlyCut ? null : () => context.push('/admin/exam-builder/$id?bankParent=$_currentFolderId'),
-        trailing: PopupMenuButton(
+        trailing: PopupMenuButton<String>(
           itemBuilder: (ctx) => [
             const PopupMenuItem(value: 'move', child: Row(children: [Icon(Icons.content_cut_rounded, size: 16), SizedBox(width: 8), Text('Move / Cut')])),
             const PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -286,8 +299,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     );
   }
 
-  // --- LOGIC ---
-
   void _executePasteAction() async {
     if (_cutItemId == null) return;
 
@@ -322,13 +333,11 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
   }
 
   Future<void> _exportCurrentFolder() async {
-    // Show quick status update
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Fetching content from '$_currentFolderName'...")),
     );
 
     try {
-      // Query database for items located inside the current active folder context
       final snapshot = await _db
           .child('questionBank')
           .orderByChild('parentId')
@@ -343,27 +352,22 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
         return;
       }
 
-      final rawData = Map<String, dynamic>.from(snapshot.value as Map);
-      
-      // Filter out system properties and structural folders if you strictly want clean data blocks
+      final rawData = Map<dynamic, dynamic>.from(snapshot.value as Map);
       final List<Map<String, dynamic>> cleanList = [];
       
       rawData.forEach((key, value) {
-        final Map<String, dynamic> itemMap = Map<String, dynamic>.from(value as Map);
-        // Include item system id value in map structure
-        itemMap['id'] = key;
-        cleanList.add(itemMap);
+        if (value is Map) {
+          final itemMap = Map<String, dynamic>.from(value);
+          itemMap['id'] = key.toString();
+          cleanList.add(itemMap);
+        }
       });
 
-      // Encode filtered elements into a pretty-printed readable JSON block format
       final String formattedJson = const JsonEncoder.withIndent('  ').convert(cleanList);
-
-      // Copy automatically to local runtime OS clipboard buffer
       await Clipboard.setData(ClipboardData(text: formattedJson));
 
       if (!mounted) return;
 
-      // Render diagnostic review sheet directly to developer
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -382,7 +386,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  "JSON string configuration data auto-copied to system clipboard context safely!",
+                  "JSON exported to system clipboard!",
                   style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 12),
@@ -528,7 +532,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     if (action == 'move') {
       setState(() {
         _cutItemId = id;
-        _cutItemName = data['stem'] ?? 'Untitled Question';
+        _cutItemName = data['stem']?.toString() ?? 'Untitled Question';
         _isFolderCut = false;
       });
     } else if (action == 'edit') {

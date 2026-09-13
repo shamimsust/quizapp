@@ -45,15 +45,26 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
             if (snapshot.hasError || !snapshot.hasData) return _buildErrorState();
 
             final results = snapshot.data as Map<String, dynamic>;
-            final attempt = results['attempt'];
+            final attempt = results['attempt'] as Map;
             final questions = results['questions'] as Map;
             final answers = results['answers'] as Map;
+            final resultData = (results['resultData'] as Map?) ?? {};
 
-            final String status = attempt['status'] ?? 'submitted';
-            final bool isPending = status != 'completed'; 
-            
-            final dynamic score = attempt['score'] ?? attempt['totalPoints'] ?? 0;
-            final num total = attempt['totalPossible'] ?? 0;
+            // Read the verified score from results/$attemptId or attempt['score']
+            final dynamic score = resultData['score'] ??
+                resultData['totalPoints'] ??
+                attempt['score'] ??
+                attempt['totalPoints'] ??
+                0;
+
+            final String status = resultData['status']?.toString() ??
+                attempt['status']?.toString() ??
+                'submitted';
+            final bool isPending = status != 'completed';
+
+            final num total = (resultData['totalPossible'] as num?) ??
+                (attempt['totalPossible'] as num?) ??
+                0;
 
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -67,7 +78,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     
                     if (!isPending) ...[
                       const SizedBox(height: 24),
-                      _buildQuickSummary(questions, answers),
+                      _buildQuickSummary(questions, answers, resultData),
                     ],
 
                     const SizedBox(height: 32),
@@ -79,7 +90,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     ),
                     if (_showDetails) ...[
                       const SizedBox(height: 24),
-                      _buildDetailedList(questions, answers, brandBlue),
+                      _buildDetailedList(questions, answers, resultData, brandBlue),
                     ],
                     const SizedBox(height: 16),
                     _buildActionButton(
@@ -107,16 +118,50 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     final results = await Future.wait([
       FirebaseDatabase.instance.ref('exams/$examId/questions').get(),
       FirebaseDatabase.instance.ref('attemptAnswers/${widget.attemptId}').get(),
+      FirebaseDatabase.instance.ref('results/${widget.attemptId}').get(),
     ]);
     final Map questions = (results[0].value as Map?) ?? {};
     final Map studentAnswers = Map.from((results[1].value as Map?) ?? {});
     if (studentAnswers.isEmpty && attemptData['answers'] != null) {
       studentAnswers.addAll(Map.from(attemptData['answers']));
     }
-    return {'attempt': attemptData, 'questions': questions, 'answers': studentAnswers};
+    final Map resultData = results[2].exists && results[2].value is Map
+        ? Map<String, dynamic>.from(results[2].value as Map)
+        : {};
+
+    return {
+      'attempt': attemptData,
+      'questions': questions,
+      'answers': studentAnswers,
+      'resultData': resultData,
+    };
   }
 
-  Widget _buildQuickSummary(Map questions, Map answers) {
+  /// Derives whether an MCQ was answered correctly from the server-computed
+  /// per-question score in resultData (populated by exam_room_screen on submit
+  /// or by manual_grading_screen after grading). Falls back to the autoPoints
+  /// field stored per-answer if the results node isn't available yet.
+  bool _isMcqCorrect(String qId, Map<String, dynamic> studentAns, Map resultData) {
+    // 1. Try results/$attemptId/perQuestion (set by exam_room_screen/_submit)
+    final perQ = resultData['perQuestion'];
+    if (perQ is Map && perQ[qId] != null) {
+      return (perQ[qId] as num) > 0;
+    }
+    // 2. Try results/$attemptId/auto/perQuestion (set by Cloud Function)
+    final autoPerQ = resultData['auto']?['perQuestion'];
+    if (autoPerQ is Map && autoPerQ[qId] != null) {
+      return (autoPerQ[qId] as num) > 0;
+    }
+    // 3. Fall back to autoPoints stored in attemptAnswers
+    final autoPoints = studentAns['autoPoints'];
+    if (autoPoints != null) {
+      return (autoPoints as num) > 0;
+    }
+    // 4. Can't determine — treat as unknown (count as neither correct nor incorrect)
+    return false;
+  }
+
+  Widget _buildQuickSummary(Map questions, Map answers, Map resultData) {
     int correctCount = 0;
     int incorrectCount = 0;
     int writtenCount = 0;
@@ -128,13 +173,10 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 
       final studentAns = Map<String, dynamic>.from((answers[qId] ?? {}) as Map);
       final bool isMCQ = type.contains('mcq');
-      
+
       if (isMCQ) {
-        final List correctOptions = List.from(qData['correctOptions'] ?? []);
-        final dynamic selected = studentAns['selected'];
-        final bool isThisCorrect = selected is List 
-            ? (selected.length == correctOptions.length && selected.every((e) => correctOptions.contains(e)))
-            : correctOptions.contains(selected);
+        // Use server-computed score — never rely on correctOptions from question data
+        final bool isThisCorrect = _isMcqCorrect(qId.toString(), studentAns, resultData);
         isThisCorrect ? correctCount++ : incorrectCount++;
       } else {
         writtenCount++;
@@ -180,24 +222,21 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     );
   }
 
-  Widget _buildDetailedList(Map questions, Map answers, Color brandBlue) {
+  Widget _buildDetailedList(Map questions, Map answers, Map resultData, Color brandBlue) {
     final entries = questions.entries.where((entry) {
       final qData = Map<String, dynamic>.from(entry.value as Map);
       final String type = qData['type']?.toString() ?? 'mcq_single';
-      
+
       if (type == 'info_block') return _filter == null;
       if (_filter == null) return true;
-      
+
       final studentAns = Map<String, dynamic>.from((answers[entry.key] ?? {}) as Map);
       final bool isMCQ = type.contains('mcq');
 
       if (_filter == 'written') return !isMCQ;
 
-      final List correctOptions = List.from(qData['correctOptions'] ?? []);
-      final dynamic selected = studentAns['selected'];
-      final bool isCorrect = isMCQ && (selected is List 
-          ? (selected.length == correctOptions.length && selected.every((e) => correctOptions.contains(e)))
-          : correctOptions.contains(selected));
+      // Use server-computed score — never rely on correctOptions from question data
+      final bool isCorrect = isMCQ && _isMcqCorrect(entry.key.toString(), studentAns, resultData);
 
       return _filter == 'correct' ? isCorrect : (isMCQ && !isCorrect);
     }).toList();
@@ -219,17 +258,21 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
         ),
         const SizedBox(height: 16),
         ...entries.map((entry) {
-          final qId = entry.key;
+          final qId = entry.key.toString();
           final qData = Map<String, dynamic>.from(entry.value as Map);
           final String type = qData['type']?.toString() ?? 'mcq_single';
           final bool isInfo = type == 'info_block';
           final String? imageUrl = qData['imageUrl'];
-          
+
           final studentAns = Map<String, dynamic>.from((answers[qId] ?? {}) as Map);
           final bool isMCQ = type.contains('mcq');
           final List options = qData['options'] ?? [];
-          final List correctOptions = List.from(qData['correctOptions'] ?? []);
           final dynamic selected = studentAns['selected'];
+
+          // Determine which options were correct using server-computed score
+          // (option-level correctness can only be shown if resultData has
+          // enough detail — otherwise we show a neutral "your answer" indicator)
+          final bool questionWasCorrect = isMCQ && _isMcqCorrect(qId, studentAns, resultData);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -249,7 +292,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     Expanded(child: LatexText(qData['stem'] ?? '', size: 14)),
                   ],
                 ),
-                
+
                 if (imageUrl != null && imageUrl.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   ClipRRect(
@@ -259,26 +302,28 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                 ],
 
                 if (!isInfo) const SizedBox(height: 16),
-                
+
                 if (isMCQ) ...[
                   ...options.map((opt) {
                     final String optId = opt is Map ? (opt['id']?.toString() ?? '') : '';
                     final String optText = opt is Map ? (opt['text']?.toString() ?? '') : opt.toString();
-                    final bool isThisCorrect = correctOptions.contains(optId);
                     final bool isThisSelected = selected is List ? selected.contains(optId) : selected == optId;
-                    
+
                     Color bgColor = Colors.white;
                     Color borderColor = const Color(0xFFF1F5F9);
                     Widget trailingIcon = const Icon(Icons.radio_button_unchecked_rounded, size: 16, color: Color(0xFFCBD5E1));
 
-                    if (isThisCorrect) {
-                      bgColor = Colors.green.withValues(alpha: 0.08);
-                      borderColor = Colors.green.shade200;
-                      trailingIcon = const Icon(Icons.check_circle_rounded, size: 18, color: Colors.green);
-                    } else if (isThisSelected) {
-                      bgColor = Colors.red.withValues(alpha: 0.08);
-                      borderColor = Colors.red.shade200;
-                      trailingIcon = const Icon(Icons.cancel_rounded, size: 18, color: Colors.red);
+                    if (isThisSelected) {
+                      // Highlight selected option green if question scored, red if not
+                      if (questionWasCorrect) {
+                        bgColor = Colors.green.withValues(alpha: 0.08);
+                        borderColor = Colors.green.shade200;
+                        trailingIcon = const Icon(Icons.check_circle_rounded, size: 18, color: Colors.green);
+                      } else {
+                        bgColor = Colors.red.withValues(alpha: 0.08);
+                        borderColor = Colors.red.shade200;
+                        trailingIcon = const Icon(Icons.cancel_rounded, size: 18, color: Colors.red);
+                      }
                     }
 
                     return Container(
@@ -301,7 +346,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                   }),
                 ] else if (!isInfo) ...[
                   _buildResponseRow("YOUR RESPONSE", studentAns['text'] ?? 'No Answer', brandBlue),
-                  
+
                   // STUDENT'S UPLOADED IMAGE (ImgBB)
                   if (studentAns['answerImageUrl'] != null) ...[
                     const SizedBox(height: 12),

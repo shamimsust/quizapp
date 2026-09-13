@@ -357,28 +357,92 @@ class _ExamRoomScreenState extends State<ExamRoomScreen> with WidgetsBindingObse
     if (_submitting || !mounted) return;
     setState(() => _submitting = true);
     try {
-      // IMPORTANT: correctOptions is intentionally never available on the
-      // client's Question objects (see Question.forStudent), so this
-      // screen can no longer compute or trust a score. All it does now is
-      // total up the possible marks (not sensitive) and hand the attempt
-      // off as 'submitted'. A Cloud Function (triggered on write to
-      // attemptAnswers/{attemptId} or attempts/{attemptId}/status) should
-      // read the real answer key server-side, grade it, and write
-      // 'score' / 'isManualGraded' / final 'status' itself. Firebase
-      // security rules should also block clients from writing 'score'
-      // directly, so a tampered client can't self-grade.
-      int totalPossible = 0;
-      for (final q in questions) {
-        if (q.type == 'info_block') continue;
-        totalPossible += q.marks;
+      final String examId = (attempt?['examId'] ?? '').toString();
+
+      // 1. Fetch answer keys if available (try examAnswerKeys first, then exams/$examId/questions)
+      final Map<String, List<String>> answerKeys = {};
+      if (examId.isNotEmpty) {
+        try {
+          final keySnap = await _db.child('examAnswerKeys/$examId').get();
+          if (keySnap.exists && keySnap.value is Map) {
+            final raw = Map<String, dynamic>.from(keySnap.value as Map);
+            raw.forEach((k, v) {
+              if (v is Map && v['correctOptions'] != null) {
+                answerKeys[k] = List<String>.from(v['correctOptions']);
+              }
+            });
+          }
+        } catch (_) {}
+
+        if (answerKeys.isEmpty) {
+          try {
+            final qSnap = await _db.child('exams/$examId/questions').get();
+            if (qSnap.exists && qSnap.value is Map) {
+              final raw = Map<String, dynamic>.from(qSnap.value as Map);
+              raw.forEach((k, v) {
+                if (v is Map && v['correctOptions'] != null) {
+                  answerKeys[k] = List<String>.from(v['correctOptions']);
+                }
+              });
+            }
+          } catch (_) {}
+        }
       }
 
-      await _db.child('attempts/${widget.attemptId}').update({
-        'status': 'submitted', // Cloud Function should transition this to 'completed' once graded.
-        'totalPossible': totalPossible,
-        'submittedAt': ServerValue.timestamp,
-        'examTitle': _examTitle,
-      });
+      int totalPossible = 0;
+      num autoScore = 0;
+      bool hasWrittenContent = false;
+      final Map<String, num> perQuestionAuto = {};
+      final Map<String, dynamic> updates = {};
+
+      for (final q in questions) {
+        if (q.type == 'info_block') continue;
+        final int qMarks = q.marks;
+        totalPossible += qMarks;
+
+        if (q.type == 'written') {
+          hasWrittenContent = true;
+        } else if (q.type.startsWith('mcq')) {
+          if (answerKeys.containsKey(q.id)) {
+            final List<String> correct = answerKeys[q.id] ?? [];
+            final List<String> selected = _selected[q.id] ?? [];
+            final bool isCorrect = selected.length == correct.length &&
+                selected.every((e) => correct.contains(e));
+            final num score = isCorrect ? qMarks : 0;
+            autoScore += score;
+            perQuestionAuto[q.id] = score;
+            updates['attemptAnswers/${widget.attemptId}/${q.id}/autoPoints'] = score;
+          }
+        }
+      }
+
+      final bool isFullyGraded = !hasWrittenContent && answerKeys.isNotEmpty;
+      final String finalStatus = isFullyGraded ? 'completed' : 'submitted';
+
+      // Update attempts/$attemptId
+      updates['attempts/${widget.attemptId}/status'] = finalStatus;
+      updates['attempts/${widget.attemptId}/totalPossible'] = totalPossible;
+      updates['attempts/${widget.attemptId}/score'] = autoScore;
+      updates['attempts/${widget.attemptId}/totalPoints'] = autoScore;
+      updates['attempts/${widget.attemptId}/isManualGraded'] = hasWrittenContent || answerKeys.isEmpty;
+      updates['attempts/${widget.attemptId}/submittedAt'] = ServerValue.timestamp;
+      updates['attempts/${widget.attemptId}/examTitle'] = _examTitle;
+
+      // Update results/$attemptId
+      updates['results/${widget.attemptId}/status'] = isFullyGraded ? 'completed' : 'awaiting_manual';
+      updates['results/${widget.attemptId}/score'] = autoScore;
+      updates['results/${widget.attemptId}/totalPoints'] = autoScore;
+      updates['results/${widget.attemptId}/totalPossible'] = totalPossible;
+      updates['results/${widget.attemptId}/isManualGraded'] = hasWrittenContent || answerKeys.isEmpty;
+      updates['results/${widget.attemptId}/auto'] = {
+        'total': autoScore,
+        'perQuestion': perQuestionAuto,
+      };
+      updates['results/${widget.attemptId}/perQuestion'] = perQuestionAuto;
+      updates['results/${widget.attemptId}/submittedAt'] = ServerValue.timestamp;
+      updates['results/${widget.attemptId}/updatedAt'] = ServerValue.timestamp;
+
+      await _db.update(updates);
       if (mounted) context.go('/submitted/${widget.attemptId}');
     } catch (e) {
       if (mounted) {

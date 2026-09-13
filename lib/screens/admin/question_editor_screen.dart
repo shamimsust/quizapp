@@ -24,7 +24,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   String _type = 'mcq_single';
   final _stemController = TextEditingController();
   final _marksController = TextEditingController(text: '1');
-  final _bulkInputController = TextEditingController(); 
+  final _bulkInputController = TextEditingController();
 
   bool _isSaving = false;
   bool _isUploading = false;
@@ -89,8 +89,22 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         newQ.remove('parentId');
         newQ.remove('isFolder');
         newQ.remove('name'); // Remove folder-name if it exists
-        
-        await ref.push().set(newQ);
+
+        // The bank's own copy still stores correctOptions inline (bank
+        // items are admin-only, so that's lower priority to migrate) —
+        // but here, going INTO exams/{examId}/questions, it must never
+        // travel with the public data. Pull it out into the answer-key
+        // node instead. See database.rules.json: examAnswerKeys.
+        final rawCorrect = newQ.remove('correctOptions');
+
+        final newRef = ref.push();
+        await newRef.set(newQ);
+
+        if (rawCorrect != null) {
+          await _db.child('examAnswerKeys/${widget.examId}/${newRef.key}').set({
+            'correctOptions': List<String>.from(rawCorrect as List),
+          });
+        }
       }
       _showSnackBar('Imported ${questions.length} questions from bank');
     } catch (e) {
@@ -104,7 +118,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   Future<void> _pickAndUploadImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(
-      source: ImageSource.gallery, 
+      source: ImageSource.gallery,
       maxWidth: 1024,
       maxHeight: 1024,
       imageQuality: 50,
@@ -114,9 +128,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
     setState(() => _isUploading = true);
     try {
-      final Uint8List bytes = await image.readAsBytes(); 
+      final Uint8List bytes = await image.readAsBytes();
       final String base64Image = base64Encode(bytes);
-      
+
       final http.MultipartRequest request = http.MultipartRequest(
           'POST', Uri.parse('https://api.imgbb.com/1/upload'));
       request.fields['key'] = _imgBBKey;
@@ -160,6 +174,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         final bool hasPipes = trimmed.contains('|');
         final parts = trimmed.split('|').map((e) => e.trim()).toList();
         final Map<String, dynamic> qData = {'order': baseOrder++};
+        List<String>? correctOptions;
 
         if (!hasPipes) {
           qData.addAll({
@@ -177,9 +192,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               {'id': 'C', 'text': parts[3]},
               {'id': 'D', 'text': parts[4]},
             ],
-            'correctOptions': [parts[5].toUpperCase()],
             'marks': int.tryParse(parts[6]) ?? 1,
           });
+          // Kept out of qData — never written to the public question node.
+          correctOptions = [parts[5].toUpperCase()];
         } else if (parts.length >= 2) {
           qData.addAll({
             'type': 'written',
@@ -194,7 +210,13 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           });
         }
 
-        await ref.push().set(qData);
+        final newRef = ref.push();
+        await newRef.set(qData);
+        if (correctOptions != null) {
+          await _db.child('examAnswerKeys/${widget.examId}/${newRef.key}').set({
+            'correctOptions': correctOptions,
+          });
+        }
         count++;
       }
 
@@ -267,15 +289,25 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   }
 
   // --- CLONE & DELETE LOGIC ---
-  Future<void> _cloneQuestion(Map<String, dynamic> data) async {
+  Future<void> _cloneQuestion(String sourceQId, Map<String, dynamic> data) async {
     setState(() => _isSaving = true);
     try {
       final clonedData = Map<String, dynamic>.from(data);
       clonedData['order'] = DateTime.now().millisecondsSinceEpoch;
-      await _db
-          .child('exams/${widget.examId}/questions')
-          .push()
-          .set(clonedData);
+      final newRef = _db.child('exams/${widget.examId}/questions').push();
+      await newRef.set(clonedData);
+
+      // data (from the questions list stream) no longer carries
+      // correctOptions post-migration — copy the answer key separately
+      // from its own node if the source question has one.
+      final keySnap =
+          await _db.child('examAnswerKeys/${widget.examId}/$sourceQId').get();
+      if (keySnap.exists) {
+        await _db
+            .child('examAnswerKeys/${widget.examId}/${newRef.key}')
+            .set(Map<String, dynamic>.from(keySnap.value as Map));
+      }
+
       _showSnackBar('Cloned successfully!');
     } catch (e) {
       _showSnackBar('Cloning failed', isError: true);
@@ -303,6 +335,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
     if (confirm == true) {
       await _db.child('exams/${widget.examId}/questions/$qId').remove();
+      // Clean up the matching answer key too, so nothing orphaned lingers.
+      await _db.child('examAnswerKeys/${widget.examId}/$qId').remove();
       if (_editingQuestionId == qId) _clearForm();
       _showSnackBar('Deleted successfully');
     }
@@ -320,6 +354,12 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       final marks = _type == 'info_block'
           ? 0
           : (int.tryParse(_marksController.text) ?? 1);
+      final List<String>? correctOptions =
+          _type.startsWith('mcq') ? _correctOptions.toList() : null;
+
+      // Public data — never includes correctOptions. This is what
+      // exams/{examId}/questions/{qId} stores, which any signed-in user
+      // (including anonymous student sessions) can read.
       final qMap = {
         'type': _type,
         'stem': stemText,
@@ -329,18 +369,32 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           'options': _optionControllers.entries
               .map((e) => {'id': e.key, 'text': e.value.text.trim()})
               .toList(),
-        if (_type.startsWith('mcq')) 'correctOptions': _correctOptions.toList(),
         if (_editingQuestionId == null)
           'order': DateTime.now().millisecondsSinceEpoch,
       };
 
+      String qId;
       if (_editingQuestionId != null) {
+        qId = _editingQuestionId!;
         await _db
-            .child('exams/${widget.examId}/questions/$_editingQuestionId')
+            .child('exams/${widget.examId}/questions/$qId')
             .update(qMap);
       } else {
-        await _db.child('exams/${widget.examId}/questions').push().set(qMap);
+        final ref = _db.child('exams/${widget.examId}/questions').push();
+        qId = ref.key!;
+        await ref.set(qMap);
       }
+
+      // Answer key lives in its own admin-only node (examAnswerKeys) —
+      // written/cleared independently of the public question data above.
+      final keyRef = _db.child('examAnswerKeys/${widget.examId}/$qId');
+      if (correctOptions != null) {
+        await keyRef.set({'correctOptions': correctOptions});
+      } else {
+        // e.g. type was switched away from MCQ — clear any stale answer key.
+        await keyRef.remove();
+      }
+
       _clearForm();
       _showSnackBar('Saved successfully!');
     } catch (e) {
@@ -473,13 +527,13 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 13, 
+                          fontSize: 13,
                           fontWeight: isInfo ? FontWeight.normal : FontWeight.w600,
                           fontStyle: isInfo ? FontStyle.italic : FontStyle.normal)),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     IconButton(
                         icon: const Icon(Icons.copy_rounded, size: 18),
-                        onPressed: () => _cloneQuestion(q)),
+                        onPressed: () => _cloneQuestion(e.key, q)),
                     IconButton(
                         icon: const Icon(Icons.edit_outlined,
                             size: 18, color: brandBlue),
@@ -653,7 +707,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFE2E8F0))));
 
-  void _prepareEdit(String qId, Map<String, dynamic> data) {
+  Future<void> _prepareEdit(String qId, Map<String, dynamic> data) async {
     setState(() {
       _editingQuestionId = qId;
       _type = data['type'] ?? 'mcq_single';
@@ -661,9 +715,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       _marksController.text = (data['marks'] ?? 1).toString();
       _imageUrl = data['imageUrl'];
       _correctOptions.clear();
-      if (data['correctOptions'] != null) {
-        _correctOptions.addAll(List<String>.from(data['correctOptions']));
-      }
       _optionControllers.forEach((k, v) => v.clear());
       if (data['options'] != null) {
         for (final opt in data['options']) {
@@ -673,8 +724,26 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         }
       }
     });
-    _scrollController.animateTo(0,
-        duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+
+    // correctOptions no longer lives inline in the question data (it's the
+    // answer key, kept in its own admin-only node) — fetch it separately
+    // to populate the checkboxes.
+    if ((data['type'] ?? 'mcq_single').toString().startsWith('mcq')) {
+      final keySnap =
+          await _db.child('examAnswerKeys/${widget.examId}/$qId').get();
+      if (keySnap.exists && mounted) {
+        final keyData = Map<String, dynamic>.from(keySnap.value as Map);
+        setState(() {
+          _correctOptions
+              .addAll(List<String>.from(keyData['correctOptions'] ?? []));
+        });
+      }
+    }
+
+    if (mounted) {
+      _scrollController.animateTo(0,
+          duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+    }
   }
 
   void _clearForm() {
@@ -761,7 +830,7 @@ class _BankPickerViewState extends State<_BankPickerView> {
                   final isFolder = val['isFolder'] == true;
 
                   return ListTile(
-                    leading: Icon(isFolder ? Icons.folder_rounded : Icons.functions_rounded, 
+                    leading: Icon(isFolder ? Icons.folder_rounded : Icons.functions_rounded,
                         color: isFolder ? Colors.amber : const Color(0xFF2264D7)),
                     title: Text(val['name'] ?? val['stem'] ?? 'Untitled'),
                     subtitle: isFolder ? null : Text("${val['type']?.toString().toUpperCase()}"),
@@ -811,8 +880,8 @@ class _BankPickerViewState extends State<_BankPickerView> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),
                   child: Text(e.value['name']!.toUpperCase(), style: TextStyle(
-                    fontSize: 10, 
-                    fontWeight: FontWeight.w900, 
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
                     color: e.key == _pathStack.length - 1 ? Colors.black : const Color(0xFF2264D7),
                     letterSpacing: 1.1
                   )),
