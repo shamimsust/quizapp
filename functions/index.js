@@ -10,8 +10,16 @@ export const onAttemptSubmit = functions.database.ref('/attempts/{attemptId}/sta
   const attemptSnap = await db.ref(`/attempts/${attemptId}`).once('value');
   const attempt = attemptSnap.val();
   const examId = attempt.examId;
-  const qSnap = await db.ref(`/examQuestions/${examId}`).once('value');
+
+  // NOTE: this used to read from /examQuestions/{examId}, a node nothing in
+  // the app ever wrote to (confirmed by reviewing every admin write path) —
+  // meaning qs was always {} and every submitted attempt silently scored 0.
+  // Fixed to read from the actual live question data, split across the
+  // public node and the (now separated) admin-only answer-key node.
+  const qSnap = await db.ref(`/exams/${examId}/questions`).once('value');
   const qs = qSnap.val() || {};
+  const keySnap = await db.ref(`/examAnswerKeys/${examId}`).once('value');
+  const answerKeys = keySnap.val() || {};
   const ansSnap = await db.ref(`/attemptAnswers/${attemptId}`).once('value');
   const answers = ansSnap.val() || {};
 
@@ -20,7 +28,7 @@ export const onAttemptSubmit = functions.database.ref('/attempts/{attemptId}/sta
 
   for (const [qid, q] of Object.entries(qs)) {
     if (q.type && q.type.startsWith('mcq')) {
-      const correct = new Set(q.correctOptions || []);
+      const correct = new Set((answerKeys[qid] || {}).correctOptions || []);
       const selected = new Set(((answers[qid] || {}).selected) || []);
       const ok = correct.size === selected.size && [...correct].every(c => selected.has(c));
       const marks = q.marks || 1;
