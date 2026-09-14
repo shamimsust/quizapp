@@ -3,7 +3,7 @@
     "rules": "database.rules.json"
   },
   "hosting": {
-    "site": "math-quiz-app-893b2",
+    "site": "tariqulislam",
     "public": "build/web",
     "ignore": [
       "firebase.json",
